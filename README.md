@@ -47,7 +47,7 @@ Manual installation only.
 2. Find your vault folder (the one containing a `.obsidian` folder), e.g. via "Open vault folder" in the vault switcher in Obsidian.
 3. Create the plugin folder `<vault>/.obsidian/plugins/copilot-cli-plus/`. The folder name must be `copilot-cli-plus` (it must match `id` in `manifest.json`). Enable "Show hidden items" in Explorer if `.obsidian` is not visible.
 4. Copy `main.js`, `manifest.json` and `styles.css` into that folder. Do not overwrite or delete an existing `data.json` there: it holds your settings and prompts.
-5. `conpty-bridge.exe` (~170KB) is required. If it is missing, the plugin downloads it on first launch (see Network Usage). Alternatively build it yourself (`cd conpty-bridge && cargo build --release`) and copy `conpty-bridge/target/release/conpty-bridge.exe` into the same folder; a self-built binary only passes the SHA-256 check after you update the pinned hash in `src/bridge.ts` and rebuild the plugin.
+5. Copy `conpty-bridge.exe` (~170KB) into the same folder. The plugin never downloads it and will not start the terminal without it. Get it in one of two ways: (a) download `conpty-bridge.exe` from the same release and place it next to `main.js` (the release zip `copilot-cli-plus.zip` contains all four files, so you can extract that instead of steps 1 and 4); (b) build it yourself with Rust: `cd conpty-bridge && cargo build --release`, then copy `conpty-bridge/target/release/conpty-bridge.exe`. The plugin does not verify the file, so only use a binary from a release you trust or one you built.
 6. In Obsidian open Settings > Community plugins, turn off Restricted mode if needed, click Reload, and enable "Copilot CLI Plus".
 7. After updating files later, reload the plugin (toggle it off and on) or restart Obsidian with Ctrl+R.
 
@@ -80,12 +80,9 @@ The ConPTY bridge creates a real pseudo-terminal using Windows native APIs. No N
 
 ## Network Usage
 
-This plugin makes network requests in the following cases:
+The plugin itself makes no network requests: it does not download anything (including the ConPTY bridge, which you install manually) and has no telemetry. The IDE integration listens only on a local named pipe.
 
-- **ConPTY bridge download** — If the binary is missing or does not match the pinned SHA-256 (see `src/bridge.ts`), the plugin downloads that exact release asset (pinned version, not `latest`) and discards it if the hash differs. The bridge is also re-verified before every launch, so a locally built bridge must be accepted by updating the pinned hash.
-- **GitHub Copilot CLI** — The Copilot CLI itself connects to GitHub's API to process your prompts. This is managed by the Copilot CLI, not the plugin.
-
-The plugin itself does not collect telemetry or send data to any third-party service.
+1. **GitHub Copilot CLI** — The Copilot CLI itself connects to GitHub's API to process your prompts. This is managed by the Copilot CLI, not the plugin.
 
 ## Development
 

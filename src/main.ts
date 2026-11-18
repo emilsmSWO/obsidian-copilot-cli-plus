@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, addIcon, Notice, requestUrl } from "obsidian";
+import { Plugin, WorkspaceLeaf, addIcon } from "obsidian";
 import { EditorView } from "@codemirror/view";
 import { CopilotView } from "./CopilotView";
 import { CopilotSettingTab } from "./CopilotSettingTab";
@@ -6,7 +6,6 @@ import { VIEW_TYPE_COPILOT, ICON_COPILOT, COPILOT_ICON_SVG, DEFAULT_SETTINGS } f
 import type { CopilotSettings, Placement } from "./constants";
 import { ContextProvider } from "./ContextProvider";
 import { IdeServer } from "./IdeServer";
-import { BRIDGE_URL, isPinnedBridge, isTrustedBridgeFile } from "./bridge";
 import { PromptDef, promptCommandId, runnablePrompts, sanitizePrompts } from "./prompts";
 
 export default class CopilotPlugin extends Plugin {
@@ -47,13 +46,6 @@ export default class CopilotPlugin extends Plugin {
     // ~/.copilot, NOT the OneDrive-synced vault, so each machine is independent)
     if (this.settings.persistentSession && !this.getMachineSessionId()) {
       this.setMachineSessionId(require("crypto").randomUUID());
-    }
-
-    // Ensure ConPTY bridge binary exists (downloaded on first run if missing)
-    try {
-      await this.ensureConPtyBridge();
-    } catch (e) {
-      console.error("Copilot CLI: ensureConPtyBridge failed", e);
     }
 
     // Initialize IDE context provider (selection caching for IDE server)
@@ -312,31 +304,6 @@ export default class CopilotPlugin extends Plugin {
       view?.submitPrompt(p.text, p.sendImmediately);
     }
     view?.focusTerminal();
-  }
-
-  /** Download the pinned conpty-bridge.exe if missing or not matching the pinned SHA-256 */
-  private async ensureConPtyBridge(): Promise<void> {
-    try {
-      const path = require("path") as typeof import("path");
-      const fs = require("fs") as typeof import("fs");
-      const vaultPath = (this.app.vault.adapter as any).basePath as string;
-      const pluginDir = path.join(vaultPath, this.manifest.dir);
-      const bridgePath = path.join(pluginDir, "conpty-bridge.exe");
-
-      if (isTrustedBridgeFile(bridgePath)) return;
-
-      new Notice("Copilot CLI: Downloading ConPTY bridge...");
-      const response = await requestUrl({ url: BRIDGE_URL });
-      if (!isPinnedBridge(new Uint8Array(response.arrayBuffer))) {
-        new Notice("Copilot CLI: ConPTY bridge download failed SHA-256 verification and was discarded.");
-        return;
-      }
-      fs.mkdirSync(pluginDir, { recursive: true });
-      fs.writeFileSync(bridgePath, Buffer.from(response.arrayBuffer));
-      new Notice("Copilot CLI: ConPTY bridge ready.");
-    } catch (e) {
-      console.error("Copilot CLI: ensureConPtyBridge failed", e);
-    }
   }
 
   /** Remove legacy MCP server entry from ~/.copilot/mcp-config.json */
