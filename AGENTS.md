@@ -27,6 +27,7 @@ src/
   ContextProvider.ts    → IDE state collection (selection caching for IDE server)
   IdeServer.ts          → Native IDE server (HTTP on named pipe, /ide discovery)
   constants.ts         → Shared constants and types
+  prompts.ts           → User-defined prompt model and helpers (tested in test/)
   styles.css           → Terminal CSS (copied to root on build)
 conpty-bridge/         → Rust ConPTY bridge binary source
 .agents/skills/        → Agent skills (see below)

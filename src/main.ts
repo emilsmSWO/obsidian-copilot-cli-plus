@@ -1,4 +1,4 @@
-import { Plugin, addIcon, Notice, requestUrl } from "obsidian";
+import { Plugin, WorkspaceLeaf, addIcon, Notice, requestUrl } from "obsidian";
 import { EditorView } from "@codemirror/view";
 import { CopilotView } from "./CopilotView";
 import { CopilotSettingTab } from "./CopilotSettingTab";
@@ -7,12 +7,16 @@ import type { CopilotSettings, Placement } from "./constants";
 import { ContextProvider } from "./ContextProvider";
 import { IdeServer } from "./IdeServer";
 import { BRIDGE_URL, isPinnedBridge, isTrustedBridgeFile } from "./bridge";
+import { PromptDef, promptCommandId, runnablePrompts, sanitizePrompts } from "./prompts";
 
 export default class CopilotPlugin extends Plugin {
   settings: CopilotSettings = { ...DEFAULT_SETTINGS };
   contextProvider: ContextProvider | null = null;
   private ideServer: IdeServer | null = null;
   private vaultPath: string = "";
+  private registeredPromptCommands: string[] = [];
+  /** Handed to the next CopilotView constructed (see activateView) */
+  pendingLaunch: { sessionId: string; prompt: PromptDef } | null = null;
 
   /** Start or stop the IDE server to match the current setting (live toggle). */
   async setIdeIntegration(enabled: boolean): Promise<void> {
@@ -193,6 +197,8 @@ export default class CopilotPlugin extends Plugin {
     this.addCommand({ id: "open-copilot-bottom", name: "Open Copilot in bottom pane", callback: () => this.activateView("bottom") });
     this.addCommand({ id: "open-copilot-split", name: "Open Copilot in split pane", callback: () => this.activateView("split") });
 
+    this.registerPromptCommands();
+
     // Auto-open on vault load
     if (this.settings.autoOpen) {
       this.app.workspace.onLayoutReady(() => {
@@ -223,17 +229,20 @@ export default class CopilotPlugin extends Plugin {
     }
   }
 
-  /** Open or reveal the Copilot terminal view */
-  async activateView(placement?: Placement): Promise<void> {
+  /** Open or reveal the Copilot terminal view; `launch` forces a new leaf running a fresh session */
+  async activateView(
+    placement?: Placement,
+    launch?: { sessionId: string; prompt: PromptDef }
+  ): Promise<WorkspaceLeaf | null> {
     const { workspace } = this.app;
     const target = placement || this.settings.defaultPlacement;
 
     // Reuse existing leaf if no explicit placement override
-    if (!placement) {
+    if (!placement && !launch) {
       const existing = workspace.getLeavesOfType(VIEW_TYPE_COPILOT);
       if (existing.length > 0) {
         workspace.revealLeaf(existing[0]);
-        return;
+        return existing[0];
       }
     }
 
@@ -256,10 +265,53 @@ export default class CopilotPlugin extends Plugin {
         break;
     }
 
-    if (leaf) {
+    if (!leaf) return null;
+    this.pendingLaunch = launch ?? null;
+    try {
       await leaf.setViewState({ type: VIEW_TYPE_COPILOT, active: true });
-      workspace.revealLeaf(leaf);
+    } finally {
+      this.pendingLaunch = null;
     }
+    workspace.revealLeaf(leaf);
+    return leaf;
+  }
+
+  /** (Re)create one command palette entry per runnable prompt */
+  registerPromptCommands(): void {
+    // No public removeCommand API; the internal one is used when present.
+    const commands = (this.app as any).commands;
+    for (const id of this.registeredPromptCommands) {
+      commands?.removeCommand?.(`${this.manifest.id}:${id}`);
+    }
+    this.registeredPromptCommands = [];
+    for (const p of runnablePrompts(this.settings.prompts)) {
+      const id = promptCommandId(p);
+      this.registeredPromptCommands.push(id);
+      this.addCommand({
+        id,
+        name: `Prompt: ${p.name.trim()}`,
+        // Look the prompt up at run time so a stale palette entry never runs outdated text
+        callback: () => {
+          const current = this.settings.prompts.find((x) => x.id === p.id);
+          if (current && current.isActive) void this.runPrompt(current);
+        },
+      });
+    }
+  }
+
+  async runPrompt(p: PromptDef): Promise<void> {
+    let view: CopilotView | null;
+    if (p.newSession) {
+      const sessionId = (require("crypto") as typeof import("crypto")).randomUUID();
+      const leaf = await this.activateView(undefined, { sessionId, prompt: p });
+      view = leaf ? (leaf.view as CopilotView) : null;
+      // The prompt was already queued by the new view's constructor
+    } else {
+      const leaf = await this.activateView();
+      view = leaf ? (leaf.view as CopilotView) : null;
+      view?.submitPrompt(p.text, p.sendImmediately);
+    }
+    view?.focusTerminal();
   }
 
   /** Download the pinned conpty-bridge.exe if missing or not matching the pinned SHA-256 */
@@ -310,6 +362,7 @@ export default class CopilotPlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings.prompts = sanitizePrompts(this.settings.prompts);
     // Ensure machineSessionIds exists (old data.json won't have it)
     if (!this.settings.machineSessionIds) {
       this.settings.machineSessionIds = {};

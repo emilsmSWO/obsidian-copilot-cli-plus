@@ -1,3 +1,5 @@
+import type { PromptDef } from "./prompts";
+
 export const VIEW_TYPE_COPILOT = "copilot-terminal-view";
 export const ICON_COPILOT = "copilot-icon";
 
@@ -29,6 +31,8 @@ export interface CopilotSettings {
   enableIdeIntegration: boolean;
   /** Automatically run /ide when the terminal starts, so the CLI connects to Obsidian */
   autoConnectIde: boolean;
+  /** User-defined prompts exposed as command palette commands */
+  prompts: PromptDef[];
 }
 
 export const DEFAULT_SETTINGS: CopilotSettings = {
@@ -43,4 +47,5 @@ export const DEFAULT_SETTINGS: CopilotSettings = {
   imagePasteFolder: "copilot-images",
   enableIdeIntegration: true,
   autoConnectIde: true,
+  prompts: [],
 };
