@@ -45,6 +45,12 @@ export function runnablePrompts(prompts: PromptDef[]): PromptDef[] {
   return prompts.filter((p) => p.isActive && p.name.trim() && p.text.trim());
 }
 
+/** Parse the ready-delay setting; falls back to the default for anything non-numeric, clamps to 500-60000 ms */
+export function clampReadyDelay(v: unknown, fallback = 2500): number {
+  const n = typeof v === "number" ? v : parseInt(String(v), 10);
+  return Number.isFinite(n) ? Math.min(60000, Math.max(500, Math.round(n))) : fallback;
+}
+
 export function promptsEqual(a: PromptDef[], b: PromptDef[]): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }

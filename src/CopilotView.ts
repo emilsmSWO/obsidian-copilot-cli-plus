@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 
 import { VIEW_TYPE_COPILOT } from "./constants";
+import { clampReadyDelay } from "./prompts";
 import type CopilotPlugin from "./main";
 import { isTrustedBridgeFile } from "./bridge";
 import { resolveCopilot } from "./resolveCopilot";
@@ -553,7 +554,7 @@ export class CopilotView extends ItemView {
       this.readyTimer = null;
       this.ready = true;
       this.flushPrompt();
-    }, 2500);
+    }, clampReadyDelay(this.plugin.settings.promptReadyDelayMs));
   }
 
   private flushPrompt(): void {

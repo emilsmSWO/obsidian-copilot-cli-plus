@@ -31,7 +31,8 @@ Define frequently used prompts in Settings > Copilot CLI > Prompts. Each active 
 
 1. Name, prompt text and three flags per prompt: Always new session, Send immediately (Enter), Active.
 2. By default the text is pasted into the open Copilot window (opened first if needed). Always new session opens an additional Copilot tab (default placement) with a fresh session and leaves the existing one running.
-3. Edits are kept in a draft until you press Save changes; Revert changes restores the saved list.
+3. Setting "CLI ready delay (ms)" (default 2500) is how long CLI output must stay quiet before the prompt is sent to a freshly started CLI; raise it for slow starts.
+4. Edits are kept in a draft until you press Save changes; Revert changes restores the saved list.
 
 ## Prerequisites
 

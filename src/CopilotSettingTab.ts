@@ -1,7 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type CopilotPlugin from "./main";
 import { DEFAULT_SETTINGS, Placement } from "./constants";
-import { PromptDef, newPrompt, promptsEqual, runnablePrompts } from "./prompts";
+import { PromptDef, clampReadyDelay, newPrompt, promptsEqual, runnablePrompts } from "./prompts";
 
 export class CopilotSettingTab extends PluginSettingTab {
   plugin: CopilotPlugin;
@@ -161,6 +161,20 @@ export class CopilotSettingTab extends PluginSettingTab {
         "Each active prompt with a name and text appears in the command palette as \"Copilot CLI: Prompt: <name>\". " +
         "It is pasted into the open Copilot window, or into a new tab with a fresh session.",
     });
+
+    new Setting(el)
+      .setName("CLI ready delay (ms)")
+      .setDesc(
+        "How long the CLI output must stay quiet after a new session starts before the prompt is sent. Increase it if the CLI starts slowly and the prompt arrives too early. 500-60000."
+      )
+      .addText((t) =>
+        t
+          .setValue(String(this.plugin.settings.promptReadyDelayMs))
+          .onChange(async (v) => {
+            this.plugin.settings.promptReadyDelayMs = clampReadyDelay(v);
+            await this.plugin.saveSettings();
+          })
+      );
 
     const dirty = !promptsEqual(this.draft, this.plugin.settings.prompts);
 

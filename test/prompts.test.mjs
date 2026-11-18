@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { newPrompt, promptCommandId, promptsEqual, runnablePrompts, sanitizePrompts } from "../src/prompts.ts";
+import { clampReadyDelay, newPrompt, promptCommandId, promptsEqual, runnablePrompts, sanitizePrompts } from "../src/prompts.ts";
 
 test("sanitizePrompts drops malformed entries and duplicate ids, fills defaults", () => {
   const out = sanitizePrompts([
@@ -31,4 +31,12 @@ test("command id is stable across renames; promptsEqual detects edits", () => {
   assert.equal(promptCommandId(p), promptCommandId(renamed));
   assert.equal(promptsEqual([p], [{ ...p }]), true);
   assert.equal(promptsEqual([p], [renamed]), false);
+});
+
+test("clampReadyDelay clamps and falls back on junk", () => {
+  assert.equal(clampReadyDelay("4000"), 4000);
+  assert.equal(clampReadyDelay(10), 500);
+  assert.equal(clampReadyDelay(1e9), 60000);
+  assert.equal(clampReadyDelay("abc"), 2500);
+  assert.equal(clampReadyDelay(undefined), 2500);
 });

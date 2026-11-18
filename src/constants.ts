@@ -33,6 +33,8 @@ export interface CopilotSettings {
   autoConnectIde: boolean;
   /** User-defined prompts exposed as command palette commands */
   prompts: PromptDef[];
+  /** Output silence (ms) after which a freshly started CLI is considered ready for prompt text */
+  promptReadyDelayMs: number;
 }
 
 export const DEFAULT_SETTINGS: CopilotSettings = {
@@ -48,4 +50,5 @@ export const DEFAULT_SETTINGS: CopilotSettings = {
   enableIdeIntegration: true,
   autoConnectIde: true,
   prompts: [],
+  promptReadyDelayMs: 2500,
 };
