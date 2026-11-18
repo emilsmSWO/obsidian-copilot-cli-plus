@@ -6,7 +6,6 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { VIEW_TYPE_COPILOT } from "./constants";
 import { clampReadyDelay } from "./prompts";
 import type CopilotPlugin from "./main";
-import { isTrustedBridgeFile } from "./bridge";
 import { resolveCopilot } from "./resolveCopilot";
 
 // xterm.js CSS (injected at runtime)
@@ -394,14 +393,7 @@ export class CopilotView extends ItemView {
       if (!fs.existsSync(bridgePath)) {
         this.terminal.write(
           `\x1b[31mConPTY bridge not found:\x1b[0m ${bridgePath}\r\n` +
-            "\x1b[90mReinstall the plugin or rebuild the bridge.\x1b[0m\r\n"
-        );
-        return;
-      }
-      if (!isTrustedBridgeFile(bridgePath)) {
-        this.terminal.write(
-          `\x1b[31mConPTY bridge failed SHA-256 verification:\x1b[0m ${bridgePath}\r\n` +
-            "\x1b[90mReload the plugin to re-download the pinned bridge.\x1b[0m\r\n"
+            "\x1b[90mCopy conpty-bridge.exe into the plugin folder (see README, Installation).\x1b[0m\r\n"
         );
         return;
       }
