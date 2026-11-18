@@ -6,6 +6,7 @@ import { VIEW_TYPE_COPILOT, ICON_COPILOT, COPILOT_ICON_SVG, DEFAULT_SETTINGS } f
 import type { CopilotSettings, Placement } from "./constants";
 import { ContextProvider } from "./ContextProvider";
 import { IdeServer } from "./IdeServer";
+import { BRIDGE_URL, isPinnedBridge, isTrustedBridgeFile } from "./bridge";
 
 export default class CopilotPlugin extends Plugin {
   settings: CopilotSettings = { ...DEFAULT_SETTINGS };
@@ -261,7 +262,7 @@ export default class CopilotPlugin extends Plugin {
     }
   }
 
-  /** Download conpty-bridge.exe from GitHub release if missing (BRAT installs) */
+  /** Download the pinned conpty-bridge.exe if missing or not matching the pinned SHA-256 */
   private async ensureConPtyBridge(): Promise<void> {
     try {
       const path = require("path") as typeof import("path");
@@ -270,11 +271,14 @@ export default class CopilotPlugin extends Plugin {
       const pluginDir = path.join(vaultPath, this.manifest.dir);
       const bridgePath = path.join(pluginDir, "conpty-bridge.exe");
 
-      if (fs.existsSync(bridgePath)) return;
+      if (isTrustedBridgeFile(bridgePath)) return;
 
-      const url = `https://github.com/sebastienlevert/obsidian-copilot-cli/releases/latest/download/conpty-bridge.exe`;
       new Notice("Copilot CLI: Downloading ConPTY bridge...");
-      const response = await requestUrl({ url });
+      const response = await requestUrl({ url: BRIDGE_URL });
+      if (!isPinnedBridge(new Uint8Array(response.arrayBuffer))) {
+        new Notice("Copilot CLI: ConPTY bridge download failed SHA-256 verification and was discarded.");
+        return;
+      }
       fs.mkdirSync(pluginDir, { recursive: true });
       fs.writeFileSync(bridgePath, Buffer.from(response.arrayBuffer));
       new Notice("Copilot CLI: ConPTY bridge ready.");

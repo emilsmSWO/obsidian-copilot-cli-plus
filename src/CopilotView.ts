@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 
 import { VIEW_TYPE_COPILOT } from "./constants";
 import type CopilotPlugin from "./main";
+import { isTrustedBridgeFile } from "./bridge";
 import { resolveCopilot } from "./resolveCopilot";
 
 // xterm.js CSS (injected at runtime)
@@ -381,6 +382,13 @@ export class CopilotView extends ItemView {
         );
         return;
       }
+      if (!isTrustedBridgeFile(bridgePath)) {
+        this.terminal.write(
+          `\x1b[31mConPTY bridge failed SHA-256 verification:\x1b[0m ${bridgePath}\r\n` +
+            "\x1b[90mReload the plugin to re-download the pinned bridge.\x1b[0m\r\n"
+        );
+        return;
+      }
 
       // Dim startup trace so a failed launch is never a silent blank pane.
       const resumeHint = resumeFlag
@@ -511,9 +519,14 @@ export class CopilotView extends ItemView {
     }
   }
 
-  /** Send text input to the PTY (used by commands like "send file context") */
+  /** Send text to the PTY as a paste, so embedded newlines can't submit a prompt */
   sendInput(text: string): void {
-    this.childProc?.stdin?.write(text);
+    const t = this.terminal;
+    if (!t) return;
+    // Strip control chars (incl. ESC) so text can't close the paste markers early.
+    const clean = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+    // Without bracketed paste, xterm turns \n into \r (Enter); flatten instead.
+    t.paste(t.modes.bracketedPasteMode ? clean : clean.replace(/\r?\n/g, " "));
   }
 
   /** Focus the xterm terminal element */

@@ -1,5 +1,7 @@
 import type { App, TFile } from "obsidian";
 import type { ContextProvider } from "./ContextProvider";
+import { confirmWrite } from "./DiffConfirmModal";
+import { resolveInVault } from "./vaultPath";
 
 /**
  * Native IDE connection server that implements the same protocol as VS Code's
@@ -633,7 +635,6 @@ export class IdeServer {
     }
 
     // Find the file by URI
-    const path = require("path") as typeof import("path");
     const fs = require("fs") as typeof import("fs");
     let filePath: string;
     try {
@@ -643,7 +644,7 @@ export class IdeServer {
     }
 
     try {
-      const content = fs.readFileSync(filePath, "utf-8");
+      const content = fs.readFileSync(resolveInVault(this.vaultPath, filePath), "utf-8");
       return {
         jsonrpc: "2.0",
         result: {
@@ -797,21 +798,25 @@ export class IdeServer {
   }
 
   private async toolOpenDiff(originalPath: string, newContents: string, tabName: string): Promise<any> {
-    // Obsidian doesn't have a native diff view like VS Code.
-    // Write the new contents to a temp file and let the user review.
+    // Obsidian has no native diff view, so ask the user to approve the write.
     const fs = require("fs") as typeof import("fs");
     const path = require("path") as typeof import("path");
 
     try {
-      // Write new content directly to the file (auto-accept behavior)
-      // The user can undo via Obsidian's undo history
-      const absPath = path.isAbsolute(originalPath) ? originalPath : this.toAbsolutePath(originalPath);
+      if (typeof originalPath !== "string" || typeof newContents !== "string") {
+        throw new Error("original_file_path and new_file_contents must be strings");
+      }
+      const absPath = resolveInVault(this.vaultPath, originalPath);
+      const relPath = path.relative(this.vaultPath, absPath);
+      if (!(await confirmWrite(this.app, relPath, newContents))) {
+        return { status: "REJECTED", trigger: "user_rejected", message: `Changes to ${tabName} were rejected.` };
+      }
       fs.writeFileSync(absPath, newContents, "utf-8");
 
       return {
         status: "SAVED",
-        trigger: "auto_accepted",
-        message: `Changes applied to ${tabName}. Use Ctrl+Z in Obsidian to undo.`,
+        trigger: "user_accepted",
+        message: `Changes applied to ${tabName}.`,
       };
     } catch (e: any) {
       return {
@@ -827,7 +832,7 @@ export class IdeServer {
       success: true,
       already_closed: true,
       tab_name: tabName,
-      message: `No active diff found with tab name "${tabName}" (Obsidian auto-accepts diffs)`,
+      message: `No active diff found with tab name "${tabName}" (Obsidian applies diffs after user confirmation)`,
     };
   }
 

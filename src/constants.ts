@@ -34,7 +34,7 @@ export interface CopilotSettings {
 export const DEFAULT_SETTINGS: CopilotSettings = {
   defaultPlacement: "right",
   autoOpen: true,
-  copilotFlags: "--yolo --banner",
+  copilotFlags: "--banner",
   copilotPath: "",
   workingDirectory: "vault",
   persistentSession: true,
