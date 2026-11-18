@@ -53,7 +53,7 @@ An Obsidian plugin that embeds **GitHub Copilot CLI** as a fully interactive ter
 |---------|---------|-------------|
 | Default placement | Right sidebar | Where Copilot opens |
 | Auto-open on vault load | On | Open Copilot when Obsidian starts |
-| Copilot CLI flags | `--yolo --banner` | Flags passed to the CLI |
+| Copilot CLI flags | `--banner` | Flags passed to the CLI |
 | Working directory | vault | CWD for the Copilot session |
 | Auto-inject file context | On | Write active file to `.context` for Copilot |
 
@@ -78,7 +78,7 @@ The ConPTY bridge creates a real pseudo-terminal using Windows native APIs. No N
 
 This plugin makes network requests in the following cases:
 
-- **ConPTY bridge download** — On first install via BRAT (or if the binary is missing), the plugin downloads `conpty-bridge.exe` (~170KB) from this repository's GitHub Releases. This is a one-time download.
+- **ConPTY bridge download** — If the binary is missing or does not match the pinned SHA-256 (see `src/bridge.ts`), the plugin downloads that exact release asset (pinned version, not `latest`) and discards it if the hash differs. The bridge is also re-verified before every launch, so a locally built bridge must be accepted by updating the pinned hash.
 - **GitHub Copilot CLI** — The Copilot CLI itself connects to GitHub's API to process your prompts. This is managed by the Copilot CLI, not the plugin.
 
 The plugin itself does not collect telemetry or send data to any third-party service.

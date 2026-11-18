@@ -49,7 +49,7 @@ export class CopilotSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Copilot CLI flags")
-      .setDesc("Flags passed to the copilot command (e.g. --yolo --banner)")
+      .setDesc("Flags passed to the copilot command (e.g. --banner). Avoid --yolo: it skips tool confirmations.")
       .addText((text) =>
         text
           .setPlaceholder(DEFAULT_SETTINGS.copilotFlags)
