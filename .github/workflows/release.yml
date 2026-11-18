@@ -36,7 +36,7 @@ jobs:
       - name: Package release
         shell: pwsh
         run: |
-          $out = "copilot-cli"
+          $out = "copilot-cli-plus"
           New-Item -ItemType Directory -Path $out -Force
 
           # Core plugin files
@@ -48,13 +48,13 @@ jobs:
           Copy-Item "conpty-bridge/target/release/conpty-bridge.exe" "$out/"
 
           # Create zip for manual install
-          Compress-Archive -Path "$out/*" -DestinationPath "copilot-cli.zip" -Force
+          Compress-Archive -Path "$out/*" -DestinationPath "copilot-cli-plus.zip" -Force
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            copilot-cli.zip
+            copilot-cli-plus.zip
             main.js
             manifest.json
             styles.css
