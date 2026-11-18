@@ -1,9 +1,13 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type CopilotPlugin from "./main";
 import { DEFAULT_SETTINGS, Placement } from "./constants";
+import { PromptDef, clampReadyDelay, newPrompt, promptsEqual, runnablePrompts } from "./prompts";
 
 export class CopilotSettingTab extends PluginSettingTab {
   plugin: CopilotPlugin;
+  /** Working copy of the prompts; only written to settings by "Save changes" */
+  private draft: PromptDef[] = [];
+  private promptsEl: HTMLElement | null = null;
 
   constructor(app: App, plugin: CopilotPlugin) {
     super(app, plugin);
@@ -119,6 +123,10 @@ export class CopilotSettingTab extends PluginSettingTab {
           })
       );
 
+    this.draft = this.clonePrompts(this.plugin.settings.prompts);
+    this.promptsEl = containerEl.createDiv();
+    this.renderPrompts();
+
     containerEl.createEl("h2", { text: "Session" });
 
     new Setting(containerEl)
@@ -137,5 +145,107 @@ export class CopilotSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+  }
+  private clonePrompts(list: PromptDef[]): PromptDef[] {
+    return list.map((p) => ({ ...p }));
+  }
+
+  private renderPrompts(): void {
+    const el = this.promptsEl;
+    if (!el) return;
+    el.empty();
+    el.createEl("h2", { text: "Prompts" });
+    el.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "Each active prompt with a name and text appears in the command palette as \"Copilot CLI: Prompt: <name>\". " +
+        "It is pasted into the open Copilot window, or into a new tab with a fresh session.",
+    });
+
+    new Setting(el)
+      .setName("CLI ready delay (ms)")
+      .setDesc(
+        "How long the CLI output must stay quiet after a new session starts before the prompt is sent. Increase it if the CLI starts slowly and the prompt arrives too early. 500-60000."
+      )
+      .addText((t) =>
+        t
+          .setValue(String(this.plugin.settings.promptReadyDelayMs))
+          .onChange(async (v) => {
+            this.plugin.settings.promptReadyDelayMs = clampReadyDelay(v);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    const dirty = !promptsEqual(this.draft, this.plugin.settings.prompts);
+
+    this.draft.forEach((p, i) => {
+      const row = el.createDiv({ cls: "copilot-prompt-row" });
+      const head = row.createDiv({ cls: "copilot-prompt-head" });
+      const name = head.createEl("input", { type: "text", placeholder: "Name" });
+      name.value = p.name;
+      name.addEventListener("input", () => { p.name = name.value; this.refreshButtons(); });
+      new Setting(head).addExtraButton((b) =>
+        b.setIcon("trash").setTooltip("Delete prompt").onClick(() => {
+          this.draft.splice(i, 1);
+          this.renderPrompts();
+        })
+      );
+
+      const text = row.createEl("textarea", { placeholder: "Prompt text", attr: { rows: "3" } });
+      text.value = p.text;
+      text.addEventListener("input", () => { p.text = text.value; this.refreshButtons(); });
+
+      const flags = row.createDiv({ cls: "copilot-prompt-flags" });
+      const flag = (label: string, key: "newSession" | "sendImmediately" | "isActive") => {
+        const l = flags.createEl("label");
+        const cb = l.createEl("input", { type: "checkbox" });
+        cb.checked = p[key];
+        cb.addEventListener("change", () => { p[key] = cb.checked; this.refreshButtons(); });
+        l.appendText(" " + label);
+      };
+      flag("Always new session", "newSession");
+      flag("Send immediately (Enter)", "sendImmediately");
+      flag("Active", "isActive");
+    });
+
+    const actions = el.createDiv({ cls: "copilot-prompt-actions" });
+    new Setting(actions)
+      .addButton((b) =>
+        b.setButtonText("Add prompt").onClick(() => {
+          this.draft.push(newPrompt(require("crypto").randomUUID()));
+          this.renderPrompts();
+        })
+      )
+      .addButton((b) => {
+        b.setButtonText("Save changes").setCta().setDisabled(!dirty).onClick(() => this.savePrompts());
+        b.buttonEl.addClass("copilot-prompt-save");
+      })
+      .addButton((b) => {
+        b.setButtonText("Revert changes").setDisabled(!dirty).onClick(() => {
+          this.draft = this.clonePrompts(this.plugin.settings.prompts);
+          this.renderPrompts();
+        });
+        b.buttonEl.addClass("copilot-prompt-revert");
+      });
+  }
+
+  /** Enable/disable Save and Revert without re-rendering (keeps input focus while typing) */
+  private refreshButtons(): void {
+    const dirty = !promptsEqual(this.draft, this.plugin.settings.prompts);
+    this.promptsEl?.querySelectorAll<HTMLButtonElement>(".copilot-prompt-save, .copilot-prompt-revert")
+      .forEach((b) => { b.disabled = !dirty; });
+  }
+
+  private async savePrompts(): Promise<void> {
+    this.plugin.settings.prompts = this.clonePrompts(this.draft);
+    await this.plugin.saveSettings();
+    this.plugin.registerPromptCommands();
+    const skipped = this.draft.filter((p) => p.isActive).length - runnablePrompts(this.draft).length;
+    new Notice(
+      skipped > 0
+        ? `Prompts saved. ${skipped} active prompt(s) without a name or text have no command.`
+        : "Prompts saved."
+    );
+    this.renderPrompts();
   }
 }

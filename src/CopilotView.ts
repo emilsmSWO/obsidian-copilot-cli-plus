@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 
 import { VIEW_TYPE_COPILOT } from "./constants";
+import { clampReadyDelay } from "./prompts";
 import type CopilotPlugin from "./main";
 import { isTrustedBridgeFile } from "./bridge";
 import { resolveCopilot } from "./resolveCopilot";
@@ -31,10 +32,22 @@ export class CopilotView extends ItemView {
   private ideAutoConnectTimer: ReturnType<typeof setTimeout> | null = null;
   private ideAutoConnectMaxTimer: ReturnType<typeof setTimeout> | null = null;
   private userHasTyped = false;
+  /** Set for tabs opened by a "new session" prompt; this tab never touches the machine session ID */
+  private sessionOverride = "";
+  /** True once startup output has settled, i.e. the CLI can take input */
+  private ready = false;
+  private readyTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingPrompt: { text: string; enter: boolean } | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: CopilotPlugin) {
     super(leaf);
     this.plugin = plugin;
+    const launch = plugin.pendingLaunch;
+    if (launch) {
+      plugin.pendingLaunch = null;
+      this.sessionOverride = launch.sessionId;
+      this.pendingPrompt = { text: launch.prompt.text, enter: launch.prompt.sendImmediately };
+    }
   }
 
   getViewType(): string {
@@ -322,8 +335,11 @@ export class CopilotView extends ItemView {
     if (!this.terminal) return;
 
     // Reset per-spawn auto-connect state
-    this.ideAutoConnectSent = false;
+    // A fresh session has no resume gate, so the CLI auto-connects to the IDE itself
+    this.ideAutoConnectSent = !!this.sessionOverride;
     this.userHasTyped = false;
+    this.ready = false;
+    if (this.readyTimer) { clearTimeout(this.readyTimer); this.readyTimer = null; }
     if (this.ideAutoConnectTimer) { clearTimeout(this.ideAutoConnectTimer); this.ideAutoConnectTimer = null; }
     if (this.ideAutoConnectMaxTimer) { clearTimeout(this.ideAutoConnectMaxTimer); this.ideAutoConnectMaxTimer = null; }
 
@@ -341,9 +357,9 @@ export class CopilotView extends ItemView {
       // UUID if it doesn't. --resume errors out ("No session ... matched") when
       // the session file is missing — e.g. on a fresh machine or after the CLI's
       // local history was cleared — which left users unable to start the terminal.
-      const resumeFlag = settings.persistentSession && this.plugin.getMachineSessionId()
-        ? ` --session-id=${this.plugin.getMachineSessionId()}`
-        : "";
+      const sessionId = this.sessionOverride ||
+        (settings.persistentSession ? this.plugin.getMachineSessionId() : "");
+      const resumeFlag = sessionId ? ` --session-id=${sessionId}` : "";
 
       // Obsidian launched from the GUI often inherits a PATH that lacks the npm
       // global bin directory (common with nvm / fnm / non-standard Node installs),
@@ -417,6 +433,7 @@ export class CopilotView extends ItemView {
       // relay stdout -> xterm
       this.childProc.stdout?.on("data", (data: Buffer) => {
         this.terminal?.write(data.toString("utf-8"));
+        this.scheduleReady();
         this.scheduleIdeAutoConnect();
       });
 
@@ -511,7 +528,7 @@ export class CopilotView extends ItemView {
 
   /** Handle /clear command — generate a new session ID so we don't resume the old conversation */
   private async onClearCommand(): Promise<void> {
-    if (this.plugin.settings.persistentSession) {
+    if (this.plugin.settings.persistentSession && !this.sessionOverride) {
       const crypto = require("crypto") as typeof import("crypto");
       this.plugin.setMachineSessionId(crypto.randomUUID());
       await this.plugin.saveSettings();
@@ -527,6 +544,36 @@ export class CopilotView extends ItemView {
     const clean = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
     // Without bracketed paste, xterm turns \n into \r (Enter); flatten instead.
     t.paste(t.modes.bracketedPasteMode ? clean : clean.replace(/\r?\n/g, " "));
+  }
+
+  /** Debounce CLI output; when it goes quiet the startup is done and any queued prompt can be sent */
+  private scheduleReady(): void {
+    if (this.ready) return;
+    if (this.readyTimer) clearTimeout(this.readyTimer);
+    this.readyTimer = setTimeout(() => {
+      this.readyTimer = null;
+      this.ready = true;
+      this.flushPrompt();
+    }, clampReadyDelay(this.plugin.settings.promptReadyDelayMs));
+  }
+
+  private flushPrompt(): void {
+    const p = this.pendingPrompt;
+    if (!p || !this.ready) return;
+    this.pendingPrompt = null;
+    this.sendInput(p.text);
+    // Enter goes through xterm so /clear detection and restart handling still apply
+    if (p.enter) setTimeout(() => this.terminal?.input("\r", true), 150);
+  }
+
+  /** Paste a prompt into the CLI now, or as soon as the CLI has finished starting */
+  submitPrompt(text: string, enter: boolean): void {
+    this.pendingPrompt = { text, enter };
+    if (this.restartPending) {
+      this.restartPending = false;
+      this.restart();
+    }
+    this.flushPrompt();
   }
 
   /** Focus the xterm terminal element */
@@ -545,6 +592,7 @@ export class CopilotView extends ItemView {
   }
 
   private killProcess(): void {
+    if (this.readyTimer) { clearTimeout(this.readyTimer); this.readyTimer = null; }
     if (this.ideAutoConnectTimer) { clearTimeout(this.ideAutoConnectTimer); this.ideAutoConnectTimer = null; }
     if (this.ideAutoConnectMaxTimer) { clearTimeout(this.ideAutoConnectMaxTimer); this.ideAutoConnectMaxTimer = null; }
     if (this.childProc) {

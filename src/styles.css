@@ -64,3 +64,38 @@
 .copilot-terminal-wrapper .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background: var(--background-modifier-border-hover);
 }
+
+/* Prompts settings */
+.copilot-prompt-row {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.copilot-prompt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.copilot-prompt-head input[type="text"] {
+  flex: 1;
+}
+
+.copilot-prompt-head .setting-item {
+  border: none;
+  padding: 0;
+}
+
+.copilot-prompt-row textarea {
+  width: 100%;
+  margin: 6px 0;
+  resize: vertical;
+}
+
+.copilot-prompt-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
