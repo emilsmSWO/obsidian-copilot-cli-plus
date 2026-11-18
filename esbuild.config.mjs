@@ -6,8 +6,9 @@ import { resolve, dirname } from "path";
 
 const dev = process.argv.includes("--dev");
 const banner = `/*
-  Obsidian Copilot - GitHub Copilot CLI integration for Obsidian
-  https://github.com/sebastienlevert/obsidian-copilot
+  Copilot CLI Plus - GitHub Copilot CLI integration for Obsidian
+  https://github.com/emilsmSWO/obsidian-copilot-cli-plus
+  Based on https://github.com/sebastienlevert/obsidian-copilot-cli (MIT)
 */`;
 
 const context = await esbuild.context({

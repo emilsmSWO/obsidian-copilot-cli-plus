@@ -1,4 +1,4 @@
-# Copilot CLI
+# Copilot CLI Plus
 
 An Obsidian plugin that embeds **GitHub Copilot CLI** as a fully interactive terminal, powered by a lightweight Rust ConPTY bridge.
 
@@ -27,7 +27,7 @@ An Obsidian plugin that embeds **GitHub Copilot CLI** as a fully interactive ter
 
 ## Custom prompts
 
-Define frequently used prompts in Settings > Copilot CLI > Prompts. Each active prompt with a name and text becomes a command palette entry ("Copilot CLI: Prompt: <name>"), so hotkeys and other plugins can bind it to a button.
+Define frequently used prompts in Settings > Copilot CLI Plus > Prompts. Each active prompt with a name and text becomes a command palette entry ("Copilot CLI Plus: Prompt: <name>"), so hotkeys and other plugins can bind it to a button.
 
 1. Name, prompt text and three flags per prompt: Always new session, Send immediately (Enter), Active.
 2. By default the text is pasted into the open Copilot window (opened first if needed). Always new session opens an additional Copilot tab (default placement) with a fresh session and leaves the existing one running.
@@ -41,20 +41,15 @@ Define frequently used prompts in Settings > Copilot CLI > Prompts. Each active 
 
 ## Installation
 
-### Via BRAT (recommended for beta testing)
+Manual installation only.
 
-1. Install the [BRAT plugin](https://github.com/TfTHacker/obsidian42-brat).
-2. In BRAT settings, click "Add Beta plugin".
-3. Enter: `sebastienlevert/obsidian-copilot-cli`
-4. Enable the plugin in Settings > Community Plugins.
-
-> On first launch, the plugin will automatically download the `conpty-bridge.exe` binary (~170KB) from the latest GitHub release if it is not already present.
-
-### Manual
-
-1. Download the latest release zip from [GitHub Releases](https://github.com/sebastienlevert/obsidian-copilot/releases/latest).
-2. Extract into your vault's `.obsidian/plugins/copilot-cli/`.
-3. Enable "Copilot CLI" in Settings > Community Plugins.
+1. Get the plugin files `main.js`, `manifest.json` and `styles.css`. Either download them from [Releases](https://github.com/emilsmSWO/obsidian-copilot-cli-plus/releases/latest), or build them from source (see Development), which writes `main.js` and `styles.css` to the repository root next to `manifest.json`.
+2. Find your vault folder (the one containing a `.obsidian` folder), e.g. via "Open vault folder" in the vault switcher in Obsidian.
+3. Create the plugin folder `<vault>/.obsidian/plugins/copilot-cli-plus/`. The folder name must be `copilot-cli-plus` (it must match `id` in `manifest.json`). Enable "Show hidden items" in Explorer if `.obsidian` is not visible.
+4. Copy `main.js`, `manifest.json` and `styles.css` into that folder. Do not overwrite or delete an existing `data.json` there: it holds your settings and prompts.
+5. `conpty-bridge.exe` (~170KB) is required. If it is missing, the plugin downloads it on first launch (see Network Usage). Alternatively build it yourself (`cd conpty-bridge && cargo build --release`) and copy `conpty-bridge/target/release/conpty-bridge.exe` into the same folder; a self-built binary only passes the SHA-256 check after you update the pinned hash in `src/bridge.ts` and rebuild the plugin.
+6. In Obsidian open Settings > Community plugins, turn off Restricted mode if needed, click Reload, and enable "Copilot CLI Plus".
+7. After updating files later, reload the plugin (toggle it off and on) or restart Obsidian with Ctrl+R.
 
 ## Settings
 
@@ -107,9 +102,8 @@ npm test
 # Build the ConPTY bridge (requires Rust)
 cd conpty-bridge && cargo build --release
 
-# Deploy to vault
-cp main.js manifest.json styles.css conpty-bridge/target/release/conpty-bridge.exe \
-   /path/to/vault/.obsidian/plugins/copilot-terminal/
+# Deploy to vault (see Installation)
+cp main.js manifest.json styles.css /path/to/vault/.obsidian/plugins/copilot-cli-plus/
 ```
 
 ## Credits
@@ -118,4 +112,4 @@ The ConPTY bridge is based on code from [obsidian-ai-terminal](https://github.co
 
 ## License
 
-MIT - Sébastien Levert
+MIT - Emil Smolinski. Contains elements of [obsidian-copilot-cli](https://github.com/sebastienlevert/obsidian-copilot-cli) by Sébastien Levert (MIT); see `LICENSE`.

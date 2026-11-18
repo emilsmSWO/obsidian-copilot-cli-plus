@@ -1,5 +1,11 @@
 MIT License
 
+Copyright (c) 2026 Emil Smolinski
+
+This software includes elements of obsidian-copilot-cli by Sébastien Levert
+(https://github.com/sebastienlevert/obsidian-copilot-cli), used under the MIT
+License:
+
 Copyright (c) 2026 Sébastien Levert
 
 Permission is hereby granted, free of charge, to any person obtaining a copy

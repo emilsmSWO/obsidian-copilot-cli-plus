@@ -49,7 +49,7 @@ export default class CopilotPlugin extends Plugin {
       this.setMachineSessionId(require("crypto").randomUUID());
     }
 
-    // Ensure ConPTY bridge binary exists (downloads on first BRAT install)
+    // Ensure ConPTY bridge binary exists (downloaded on first run if missing)
     try {
       await this.ensureConPtyBridge();
     } catch (e) {

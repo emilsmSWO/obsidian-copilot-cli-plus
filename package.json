@@ -1,6 +1,6 @@
 {
-  "name": "copilot-cli",
-  "version": "0.5.9",
+  "name": "copilot-cli-plus",
+  "version": "1.0.0",
   "description": "GitHub Copilot CLI terminal integration for Obsidian",
   "main": "main.js",
   "scripts": {
@@ -14,7 +14,7 @@
     "terminal",
     "ai"
   ],
-  "author": "Sébastien Levert",
+  "author": "Emil Smolinski",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.0.0",
