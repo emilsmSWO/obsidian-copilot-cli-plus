@@ -1,12 +1,15 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import type { ExtraButtonComponent } from "obsidian";
 import type CopilotPlugin from "./main";
 import { DEFAULT_SETTINGS, Placement } from "./constants";
-import { PromptDef, clampReadyDelay, newPrompt, promptsEqual, runnablePrompts } from "./prompts";
+import { PromptDef, PromptConstants, clampReadyDelay, newPrompt, promptsEqual, runnablePrompts } from "./prompts";
 
 export class CopilotSettingTab extends PluginSettingTab {
   plugin: CopilotPlugin;
-  /** Working copy of the prompts; only written to settings by "Save changes" */
-  private draft: PromptDef[] = [];
+  private promptDraft: PromptDef[] = [];
+  private editingPromptIds = new Set<string>();
+  private busyPromptIds = new Set<string>();
+  private promptConstantsSaveQueue: Promise<void> = Promise.resolve();
   private promptsEl: HTMLElement | null = null;
 
   constructor(app: App, plugin: CopilotPlugin) {
@@ -123,7 +126,8 @@ export class CopilotSettingTab extends PluginSettingTab {
           })
       );
 
-    this.draft = this.clonePrompts(this.plugin.settings.prompts);
+    this.promptDraft = this.clonePrompts(this.plugin.settings.prompts);
+    this.editingPromptIds.clear();
     this.promptsEl = containerEl.createDiv();
     this.renderPrompts();
 
@@ -162,6 +166,8 @@ export class CopilotSettingTab extends PluginSettingTab {
         "It is pasted into the open Copilot window, or into a new tab with a fresh session.",
     });
 
+    this.renderPromptConstants(el);
+
     new Setting(el)
       .setName("CLI ready delay (ms)")
       .setDesc(
@@ -176,31 +182,78 @@ export class CopilotSettingTab extends PluginSettingTab {
           })
       );
 
-    const dirty = !promptsEqual(this.draft, this.plugin.settings.prompts);
-
-    this.draft.forEach((p, i) => {
+    this.promptDraft.forEach((p) => {
+      const saved = this.plugin.settings.prompts.find((item) => item.id === p.id);
+      const editing = this.editingPromptIds.has(p.id);
+      const busy = this.busyPromptIds.has(p.id);
       const row = el.createDiv({ cls: "copilot-prompt-row" });
       const head = row.createDiv({ cls: "copilot-prompt-head" });
-      const name = head.createEl("input", { type: "text", placeholder: "Name" });
+      const name = head.createEl("input", {
+        type: "text",
+        placeholder: "Name",
+        cls: "copilot-prompt-name",
+        attr: { "aria-label": "Prompt name" },
+      });
       name.value = p.name;
-      name.addEventListener("input", () => { p.name = name.value; this.refreshButtons(); });
-      new Setting(head).addExtraButton((b) =>
-        b.setIcon("trash").setTooltip("Delete prompt").onClick(() => {
-          this.draft.splice(i, 1);
-          this.renderPrompts();
-        })
-      );
+      name.readOnly = !editing || busy;
 
-      const text = row.createEl("textarea", { placeholder: "Prompt text", attr: { rows: "3" } });
+      let revertButton: ExtraButtonComponent | null = null;
+      let saveButton: ExtraButtonComponent | null = null;
+      new Setting(head)
+        .addExtraButton((b) => {
+          revertButton = b;
+          b.setIcon("rotate-ccw").setTooltip("Revert prompt");
+          b.setDisabled(!editing || busy || (!!saved && promptsEqual([p], [saved])));
+          b.onClick(() => this.revertPrompt(p.id));
+        })
+        .addExtraButton((b) => {
+          saveButton = b;
+          b.setIcon("save").setTooltip("Save prompt");
+          b.setDisabled(!editing || busy || (!!saved && promptsEqual([p], [saved])));
+          b.onClick(() => void this.savePrompt(p.id));
+        })
+        .addExtraButton((b) => {
+          b.setIcon("pencil").setTooltip("Edit prompt");
+          b.setDisabled(editing || busy);
+          b.onClick(() => this.editPrompt(p.id));
+        })
+        .addExtraButton((b) => {
+          b.setIcon("trash").setTooltip("Delete prompt");
+          b.setDisabled(busy);
+          b.onClick(() => void this.deletePrompt(p.id));
+        });
+
+      const refreshActions = () => {
+        const dirty = !saved || !promptsEqual([p], [saved]);
+        revertButton?.setDisabled(!editing || busy || !dirty);
+        saveButton?.setDisabled(!editing || busy || !dirty);
+      };
+      name.addEventListener("input", () => {
+        p.name = name.value;
+        refreshActions();
+      });
+
+      const text = row.createEl("textarea", {
+        placeholder: "Prompt text",
+        attr: { rows: "3", "aria-label": "Prompt text" },
+      });
       text.value = p.text;
-      text.addEventListener("input", () => { p.text = text.value; this.refreshButtons(); });
+      text.readOnly = !editing || busy;
+      text.addEventListener("input", () => {
+        p.text = text.value;
+        refreshActions();
+      });
 
       const flags = row.createDiv({ cls: "copilot-prompt-flags" });
       const flag = (label: string, key: "newSession" | "sendImmediately" | "isActive") => {
         const l = flags.createEl("label");
         const cb = l.createEl("input", { type: "checkbox" });
         cb.checked = p[key];
-        cb.addEventListener("change", () => { p[key] = cb.checked; this.refreshButtons(); });
+        cb.disabled = !editing || busy;
+        cb.addEventListener("change", () => {
+          p[key] = cb.checked;
+          refreshActions();
+        });
         l.appendText(" " + label);
       };
       flag("Always new session", "newSession");
@@ -208,44 +261,218 @@ export class CopilotSettingTab extends PluginSettingTab {
       flag("Active", "isActive");
     });
 
-    const actions = el.createDiv({ cls: "copilot-prompt-actions" });
-    new Setting(actions)
-      .addButton((b) =>
+    const addPrompt = el.createDiv({ cls: "copilot-prompt-actions" });
+    new Setting(addPrompt)
+      .addButton((b) => {
         b.setButtonText("Add prompt").onClick(() => {
-          this.draft.push(newPrompt(require("crypto").randomUUID()));
-          this.renderPrompts();
-        })
-      )
-      .addButton((b) => {
-        b.setButtonText("Save changes").setCta().setDisabled(!dirty).onClick(() => this.savePrompts());
-        b.buttonEl.addClass("copilot-prompt-save");
-      })
-      .addButton((b) => {
-        b.setButtonText("Revert changes").setDisabled(!dirty).onClick(() => {
-          this.draft = this.clonePrompts(this.plugin.settings.prompts);
+          const prompt = newPrompt(require("crypto").randomUUID());
+          this.promptDraft.push(prompt);
+          this.editingPromptIds.add(prompt.id);
           this.renderPrompts();
         });
-        b.buttonEl.addClass("copilot-prompt-revert");
       });
   }
 
-  /** Enable/disable Save and Revert without re-rendering (keeps input focus while typing) */
-  private refreshButtons(): void {
-    const dirty = !promptsEqual(this.draft, this.plugin.settings.prompts);
-    this.promptsEl?.querySelectorAll<HTMLButtonElement>(".copilot-prompt-save, .copilot-prompt-revert")
-      .forEach((b) => { b.disabled = !dirty; });
+  private renderPromptConstants(container: HTMLElement): void {
+    const section = container.createDiv({ cls: "copilot-prompt-constants" });
+    section.createEl("h3", { text: "Constants" });
+    section.createEl("p", {
+      cls: "setting-item-description",
+      text: "Use %name% in a prompt. %current-doc-path% inserts the active Markdown file path from the vault root.",
+    });
+
+    for (const [name, value] of Object.entries(this.plugin.settings.promptConstants)) {
+      const row = section.createDiv({ cls: "copilot-constant-row" });
+      const nameInput = row.createEl("input", {
+        type: "text",
+        placeholder: "Name",
+        attr: { "aria-label": "Constant name" },
+      });
+      nameInput.value = name;
+      const valueInput = row.createEl("textarea", {
+        placeholder: "Value",
+        attr: { rows: "2", "aria-label": "Constant value" },
+      });
+      valueInput.value = value;
+      let currentName = name;
+
+      const save = () => {
+        this.queuePromptConstantsSave(async () => {
+          const nextName = nameInput.value.trim();
+          const current = this.plugin.settings.promptConstants;
+          if (
+            !nextName ||
+            nextName.includes("%") ||
+            nextName === "current-doc-path" ||
+            (nextName !== currentName && Object.prototype.hasOwnProperty.call(current, nextName))
+          ) {
+            nameInput.value = currentName;
+            new Notice("Constant names must be unique and cannot use % or current-doc-path.");
+            return;
+          }
+          if (nextName === currentName && current[currentName] === valueInput.value) return;
+
+          const previous = current;
+          const next = this.clonePromptConstants(current);
+          delete next[currentName];
+          next[nextName] = valueInput.value;
+          this.plugin.settings.promptConstants = next;
+          try {
+            await this.plugin.saveSettings();
+            currentName = nextName;
+          } catch (error) {
+            this.plugin.settings.promptConstants = previous;
+            console.error("Copilot CLI: Failed to save prompt constant", error);
+            nameInput.value = currentName;
+            valueInput.value = previous[currentName] ?? "";
+            new Notice("Could not save constant.");
+          }
+        });
+      };
+      nameInput.addEventListener("change", () => void save());
+      valueInput.addEventListener("change", () => void save());
+
+      new Setting(row).addExtraButton((b) =>
+        b.setIcon("trash").setTooltip("Delete constant").onClick(() =>
+          this.queuePromptConstantsSave(() => this.deletePromptConstant(currentName))
+        )
+      );
+    }
+
+    new Setting(section).addButton((b) =>
+      b.setButtonText("Add constant").onClick(() =>
+        this.queuePromptConstantsSave(() => this.addPromptConstant())
+      )
+    );
   }
 
-  private async savePrompts(): Promise<void> {
-    this.plugin.settings.prompts = this.clonePrompts(this.draft);
-    await this.plugin.saveSettings();
+  private queuePromptConstantsSave(operation: () => Promise<void>): void {
+    this.promptConstantsSaveQueue = this.promptConstantsSaveQueue.then(operation);
+  }
+
+  private clonePromptConstants(constants: PromptConstants): PromptConstants {
+    const clone = Object.create(null) as PromptConstants;
+    for (const [name, value] of Object.entries(constants)) clone[name] = value;
+    return clone;
+  }
+
+  private async addPromptConstant(): Promise<void> {
+    const previous = this.plugin.settings.promptConstants;
+    const next = this.clonePromptConstants(previous);
+    let index = 1;
+    while (Object.prototype.hasOwnProperty.call(next, `constant-${index}`)) index++;
+    next[`constant-${index}`] = "";
+    this.plugin.settings.promptConstants = next;
+    try {
+      await this.plugin.saveSettings();
+    } catch (error) {
+      this.plugin.settings.promptConstants = previous;
+      console.error("Copilot CLI: Failed to add prompt constant", error);
+      new Notice("Could not add constant.");
+      return;
+    }
+    this.renderPrompts();
+  }
+
+  private async deletePromptConstant(name: string): Promise<void> {
+    const previous = this.plugin.settings.promptConstants;
+    const next = this.clonePromptConstants(previous);
+    delete next[name];
+    this.plugin.settings.promptConstants = next;
+    try {
+      await this.plugin.saveSettings();
+    } catch (error) {
+      this.plugin.settings.promptConstants = previous;
+      console.error("Copilot CLI: Failed to delete prompt constant", error);
+      new Notice("Could not delete constant.");
+      return;
+    }
+    this.renderPrompts();
+  }
+
+  private editPrompt(id: string): void {
+    const saved = this.plugin.settings.prompts.find((p) => p.id === id);
+    if (saved) {
+      const index = this.promptDraft.findIndex((p) => p.id === id);
+      if (index >= 0) this.promptDraft[index] = { ...saved };
+    }
+    this.editingPromptIds.add(id);
+    this.renderPrompts();
+  }
+
+  private revertPrompt(id: string): void {
+    const saved = this.plugin.settings.prompts.find((p) => p.id === id);
+    if (saved) {
+      const index = this.promptDraft.findIndex((p) => p.id === id);
+      if (index >= 0) this.promptDraft[index] = { ...saved };
+    } else {
+      this.promptDraft = this.promptDraft.filter((p) => p.id !== id);
+    }
+    this.editingPromptIds.delete(id);
+    this.renderPrompts();
+  }
+
+  private async savePrompt(id: string): Promise<void> {
+    if (this.busyPromptIds.has(id)) return;
+    const draft = this.promptDraft.find((p) => p.id === id);
+    if (!draft) return;
+
+    this.busyPromptIds.add(id);
+    this.renderPrompts();
+    const previous = this.plugin.settings.prompts;
+    const saved = { ...draft };
+    const exists = previous.some((p) => p.id === id);
+    this.plugin.settings.prompts = exists
+      ? previous.map((p) => (p.id === id ? saved : p))
+      : [...previous, saved];
+    try {
+      await this.plugin.saveSettings();
+    } catch (error) {
+      this.plugin.settings.prompts = previous;
+      console.error("Copilot CLI: Failed to save prompt", error);
+      new Notice("Could not save prompt.");
+      this.busyPromptIds.delete(id);
+      this.renderPrompts();
+      return;
+    }
+
+    const index = this.promptDraft.findIndex((p) => p.id === id);
+    if (index >= 0) this.promptDraft[index] = saved;
+    this.editingPromptIds.delete(id);
+    this.busyPromptIds.delete(id);
     this.plugin.registerPromptCommands();
-    const skipped = this.draft.filter((p) => p.isActive).length - runnablePrompts(this.draft).length;
-    new Notice(
-      skipped > 0
-        ? `Prompts saved. ${skipped} active prompt(s) without a name or text have no command.`
-        : "Prompts saved."
-    );
+    this.renderPrompts();
+    new Notice("Prompt saved.");
+  }
+
+  private async deletePrompt(id: string): Promise<void> {
+    if (this.busyPromptIds.has(id)) return;
+    const previous = this.plugin.settings.prompts;
+    if (!previous.some((p) => p.id === id)) {
+      this.promptDraft = this.promptDraft.filter((p) => p.id !== id);
+      this.editingPromptIds.delete(id);
+      this.renderPrompts();
+      return;
+    }
+
+    this.busyPromptIds.add(id);
+    this.renderPrompts();
+    this.plugin.settings.prompts = previous.filter((p) => p.id !== id);
+    try {
+      await this.plugin.saveSettings();
+    } catch (error) {
+      this.plugin.settings.prompts = previous;
+      console.error("Copilot CLI: Failed to delete prompt", error);
+      new Notice("Could not delete prompt.");
+      this.busyPromptIds.delete(id);
+      this.renderPrompts();
+      return;
+    }
+
+    this.promptDraft = this.promptDraft.filter((p) => p.id !== id);
+    this.editingPromptIds.delete(id);
+    this.busyPromptIds.delete(id);
+    this.plugin.registerPromptCommands();
     this.renderPrompts();
   }
 }

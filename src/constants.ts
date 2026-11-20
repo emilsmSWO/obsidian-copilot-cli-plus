@@ -1,4 +1,4 @@
-import type { PromptDef } from "./prompts";
+import type { PromptConstants, PromptDef } from "./prompts";
 
 export const VIEW_TYPE_COPILOT = "copilot-terminal-view";
 export const ICON_COPILOT = "copilot-icon";
@@ -33,6 +33,8 @@ export interface CopilotSettings {
   autoConnectIde: boolean;
   /** User-defined prompts exposed as command palette commands */
   prompts: PromptDef[];
+  /** Values available to prompt templates as %name% */
+  promptConstants: PromptConstants;
   /** Output silence (ms) after which a freshly started CLI is considered ready for prompt text */
   promptReadyDelayMs: number;
 }
@@ -50,5 +52,6 @@ export const DEFAULT_SETTINGS: CopilotSettings = {
   enableIdeIntegration: true,
   autoConnectIde: true,
   prompts: [],
+  promptConstants: {},
   promptReadyDelayMs: 2500,
 };
