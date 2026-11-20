@@ -9,6 +9,8 @@ export interface PromptDef {
   isActive: boolean;
 }
 
+export type PromptConstants = Record<string, string>;
+
 export const PROMPT_COMMAND_PREFIX = "prompt-";
 
 export function newPrompt(id: string): PromptDef {
@@ -38,6 +40,25 @@ export function sanitizePrompts(raw: unknown): PromptDef[] {
     });
   }
   return out;
+}
+
+export function sanitizePromptConstants(raw: unknown): PromptConstants {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = Object.create(null) as PromptConstants;
+  for (const [rawName, value] of Object.entries(raw)) {
+    const name = rawName.trim();
+    if (!name || name.includes("%") || name === "current-doc-path" || typeof value !== "string") continue;
+    if (Object.prototype.hasOwnProperty.call(out, name)) continue;
+    out[name] = value;
+  }
+  return out;
+}
+
+export function interpolatePrompt(text: string, constants: PromptConstants, currentDocPath?: string): string {
+  return text.replace(/%([^%]+)%/g, (token, name: string) => {
+    if (name === "current-doc-path") return currentDocPath || token;
+    return Object.prototype.hasOwnProperty.call(constants, name) ? constants[name] : token;
+  });
 }
 
 /** Prompts that get a command palette entry: active and with both name and text */

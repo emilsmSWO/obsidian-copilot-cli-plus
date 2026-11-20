@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clampReadyDelay, newPrompt, promptCommandId, promptsEqual, runnablePrompts, sanitizePrompts } from "../src/prompts.ts";
+import {
+  clampReadyDelay,
+  interpolatePrompt,
+  newPrompt,
+  promptCommandId,
+  promptsEqual,
+  runnablePrompts,
+  sanitizePromptConstants,
+  sanitizePrompts,
+} from "../src/prompts.ts";
 
 test("sanitizePrompts drops malformed entries and duplicate ids, fills defaults", () => {
   const out = sanitizePrompts([
@@ -17,6 +26,30 @@ test("sanitizePrompts drops malformed entries and duplicate ids, fills defaults"
   assert.equal(out[1].name, "");
   assert.equal(out[1].isActive, false);
   assert.deepEqual(sanitizePrompts(undefined), []);
+});
+
+test("sanitizePromptConstants keeps valid names and string values", () => {
+  const constants = sanitizePromptConstants({
+    " project ": "vault",
+    project: "duplicate",
+    "bad%name": "ignored",
+    "current-doc-path": "ignored",
+    invalid: 42,
+  });
+  assert.deepEqual({ ...constants }, { project: "vault" });
+  assert.deepEqual({ ...sanitizePromptConstants(undefined) }, {});
+});
+
+test("interpolatePrompt replaces constants and active markdown path, preserving unknown tokens", () => {
+  const constants = sanitizePromptConstants({ project: "$&", nested: "%project%" });
+  assert.equal(
+    interpolatePrompt("%project% %current-doc-path% %unknown% %nested%", constants, "folder/note.md"),
+    "$& folder/note.md %unknown% %project%"
+  );
+  assert.equal(
+    interpolatePrompt("%current-doc-path%", constants),
+    "%current-doc-path%"
+  );
 });
 
 test("runnablePrompts keeps only active prompts with name and text", () => {

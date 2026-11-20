@@ -6,7 +6,7 @@ import { VIEW_TYPE_COPILOT, ICON_COPILOT, COPILOT_ICON_SVG, DEFAULT_SETTINGS } f
 import type { CopilotSettings, Placement } from "./constants";
 import { ContextProvider } from "./ContextProvider";
 import { IdeServer } from "./IdeServer";
-import { PromptDef, promptCommandId, runnablePrompts, sanitizePrompts } from "./prompts";
+import { PromptDef, interpolatePrompt, promptCommandId, runnablePrompts, sanitizePromptConstants, sanitizePrompts } from "./prompts";
 
 export default class CopilotPlugin extends Plugin {
   settings: CopilotSettings = { ...DEFAULT_SETTINGS };
@@ -292,16 +292,25 @@ export default class CopilotPlugin extends Plugin {
   }
 
   async runPrompt(p: PromptDef): Promise<void> {
+    const activeFile = this.app.workspace.getActiveFile();
+    const prompt = {
+      ...p,
+      text: interpolatePrompt(
+        p.text,
+        this.settings.promptConstants,
+        activeFile?.extension.toLowerCase() === "md" ? activeFile.path : undefined
+      ),
+    };
     let view: CopilotView | null;
-    if (p.newSession) {
+    if (prompt.newSession) {
       const sessionId = (require("crypto") as typeof import("crypto")).randomUUID();
-      const leaf = await this.activateView(undefined, { sessionId, prompt: p });
+      const leaf = await this.activateView(undefined, { sessionId, prompt });
       view = leaf ? (leaf.view as CopilotView) : null;
       // The prompt was already queued by the new view's constructor
     } else {
       const leaf = await this.activateView();
       view = leaf ? (leaf.view as CopilotView) : null;
-      view?.submitPrompt(p.text, p.sendImmediately);
+      view?.submitPrompt(prompt.text, prompt.sendImmediately);
     }
     view?.focusTerminal();
   }
@@ -330,6 +339,7 @@ export default class CopilotPlugin extends Plugin {
   async loadSettings(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     this.settings.prompts = sanitizePrompts(this.settings.prompts);
+    this.settings.promptConstants = sanitizePromptConstants(this.settings.promptConstants);
     // Ensure machineSessionIds exists (old data.json won't have it)
     if (!this.settings.machineSessionIds) {
       this.settings.machineSessionIds = {};
