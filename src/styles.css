@@ -43,6 +43,11 @@
   padding: 0 0 0 6px;
 }
 
+.theme-light .copilot-terminal-wrapper .xterm .xterm-fg-7,
+.theme-light .copilot-terminal-wrapper .xterm .xterm-fg-15 {
+  color: var(--text-normal) !important;
+}
+
 .copilot-terminal-wrapper .xterm-viewport {
   overflow-y: auto !important;
 }
