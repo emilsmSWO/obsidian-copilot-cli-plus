@@ -20,7 +20,7 @@ export default class CopilotPlugin extends Plugin {
   /** Re-apply the terminal font in every open Copilot view (after the sync setting changes) */
   refreshTerminalFont(): void {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_COPILOT)) {
-      (leaf.view as CopilotView).applyFont();
+      if (leaf.view instanceof CopilotView) leaf.view.applyFont();
     }
   }
 

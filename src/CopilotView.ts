@@ -5,7 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 
 import { VIEW_TYPE_COPILOT } from "./constants";
 import { clampReadyDelay } from "./prompts";
-import { URL_PATTERN, cellAt, safeHttpUrl, terminalFont, urlAt } from "./terminalHelpers";
+import { DEFAULT_TERMINAL_FONT, URL_PATTERN, cellAt, safeHttpUrl, terminalFont, urlAt } from "./terminalHelpers";
 import { confirmLink } from "./LinkConfirmModal";
 import type CopilotPlugin from "./main";
 import { resolveCopilot } from "./resolveCopilot";
@@ -85,6 +85,8 @@ export class CopilotView extends ItemView {
       theme: this.getObsidianTheme(),
       allowProposedApi: true,
       scrollback: 10000,
+      // OSC 8 hyperlinks: xterm's default is confirm() + window.open, which opens the page even on Cancel
+      linkHandler: { activate: (e, uri) => this.onLinkClick(e, uri) },
     });
 
     // Addons
@@ -101,6 +103,7 @@ export class CopilotView extends ItemView {
     // stop propagation before they bubble up from the terminal.
     this.setupKeyboardInterception(wrapper);
     this.setupContextMenu(wrapper);
+    this.registerEvent(this.app.workspace.on("css-change", () => this.applyFont()));
 
     // Watch for Obsidian theme changes (light/dark toggle, theme switch)
     this.themeMutationObserver = new MutationObserver(() => {
@@ -132,12 +135,17 @@ export class CopilotView extends ItemView {
 
   /** Theme font and size when "Sync font" is on, otherwise the built-in default */
   private getFont(): { size: number; family: string } {
-    const style = getComputedStyle(document.body);
-    return terminalFont(
-      this.plugin.settings.syncObsidianFont,
-      style.getPropertyValue("--font-text-size"),
-      style.getPropertyValue("--font-monospace")
-    );
+    const probe = document.body.createDiv();
+    probe.setCssStyles({
+      position: "absolute",
+      visibility: "hidden",
+      fontFamily: `var(--font-monospace, ${DEFAULT_TERMINAL_FONT.family})`,
+      fontSize: `var(--font-text-size, ${DEFAULT_TERMINAL_FONT.size}px)`,
+    });
+    const style = getComputedStyle(probe);
+    const font = terminalFont(this.plugin.settings.syncObsidianFont, style.fontSize, style.fontFamily);
+    probe.remove();
+    return font;
   }
 
   /** Apply the current font setting and refit; a no-op when nothing changed */
@@ -211,8 +219,11 @@ export class CopilotView extends ItemView {
    */
   private setupContextMenu(wrapper: HTMLElement): void {
     const swallow = (e: MouseEvent) => {
-      if (e.button === 2) e.stopPropagation();
+      if (e.button !== 2) return;
+      e.stopPropagation();
+      if (e.type === "mousedown") e.preventDefault(); // keep the selection
     };
+    wrapper.addEventListener("mousedown", () => this.contextMenu?.hide(), true);
     wrapper.addEventListener("mousedown", swallow, true);
     wrapper.addEventListener("mouseup", swallow, true);
     wrapper.addEventListener("auxclick", swallow, true);
@@ -227,7 +238,17 @@ export class CopilotView extends ItemView {
     );
   }
 
+  private contextMenu: Menu | null = null;
+
+  private showMenu(e: MouseEvent, fill: (menu: Menu) => void): void {
+    this.contextMenu?.hide();
+    this.contextMenu = new Menu();
+    fill(this.contextMenu);
+    this.contextMenu.showAtMouseEvent(e);
+  }
+
   private onRightClick(e: MouseEvent): void {
+    this.contextMenu?.hide();
     const t = this.terminal;
     const screen = t?.element?.querySelector(".xterm-screen");
     if (!t || !screen) return;
@@ -236,26 +257,28 @@ export class CopilotView extends ItemView {
     const link = this.urlAtCell(row, col);
     const safe = link && safeHttpUrl(link);
     if (link && safe) {
-      new Menu()
-        .addItem((i) => i.setTitle("Copy Hyperlink").setIcon("copy").onClick(() => this.copyText(link)))
-        .addItem((i) => i.setTitle("Open Hyperlink").setIcon("external-link").onClick(() => this.openLink(safe)))
-        .addItem((i) =>
-          i.setTitle("Open Hyperlink in Obsidian").setIcon("globe").onClick(() => this.openLinkInObsidian(safe))
-        )
-        .showAtMouseEvent(e);
+      this.showMenu(e, (m) =>
+        m
+          .addItem((i) => i.setTitle("Copy Hyperlink").setIcon("copy").onClick(() => this.copyText(link)))
+          .addItem((i) => i.setTitle("Open Hyperlink").setIcon("external-link").onClick(() => this.openLink(safe)))
+          .addItem((i) =>
+            i.setTitle("Open Hyperlink in Obsidian").setIcon("globe").onClick(() => this.openLinkInObsidian(safe))
+          )
+      );
     } else if (row === t.buffer.active.cursorY) {
       void this.handlePaste();
       t.focus();
     } else {
-      new Menu()
-        .addItem((i) =>
-          i
-            .setTitle("Copy")
-            .setIcon("copy")
-            .setDisabled(!t.hasSelection())
-            .onClick(() => this.copyText(t.getSelection()))
+      // With the DOM renderer the selection can live in the page rather than in xterm
+      const selected = t.getSelection() || window.getSelection()?.toString() || "";
+      this.showMenu(e, (m) =>
+        m.addItem((i) =>
+          i.setTitle("Copy").setIcon("copy").onClick(() => {
+            if (selected) this.copyText(selected);
+            else new Notice("Nothing selected.");
+          })
         )
-        .showAtMouseEvent(e);
+      );
     }
   }
 
