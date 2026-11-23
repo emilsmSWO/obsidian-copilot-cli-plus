@@ -5,7 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 
 import { VIEW_TYPE_COPILOT } from "./constants";
 import { clampReadyDelay } from "./prompts";
-import { URL_PATTERN, cellAt, safeHttpUrl, terminalFont, urlAt } from "./terminalHelpers";
+import { URL_PATTERN, fontInstalled, cellAt, safeHttpUrl, terminalFont, urlAt } from "./terminalHelpers";
 import { confirmLink } from "./LinkConfirmModal";
 import type CopilotPlugin from "./main";
 import { resolveCopilot } from "./resolveCopilot";
@@ -135,13 +135,25 @@ export class CopilotView extends ItemView {
 
   /** Theme font and size when "Sync font" is on, otherwise the built-in default */
   private getFont(): { size: number; family: string } {
+    // Resolve through real note elements so the theme's own CSS decides: text size from the note body, family from inline code
+    const probe = document.body.createDiv({ cls: "markdown-preview-view markdown-rendered" });
+    probe.setCssStyles({ position: "absolute", visibility: "hidden" });
+    const code = probe.createEl("code");
+    const size = getComputedStyle(probe).fontSize;
+    const family = getComputedStyle(code).fontFamily;
+    probe.remove();
     const css = (name: string) => getComputedStyle(document.body).getPropertyValue(name);
-    // Size as rendered in an open note, in case the theme doesn't expose --font-text-size
-    const note = document.querySelector(".markdown-source-view .cm-content, .markdown-preview-view");
+    const ctx = document.createElement("canvas").getContext("2d");
+    const measure = (font: string) => {
+      if (!ctx) return 0;
+      ctx.font = `16px ${font}`;
+      return ctx.measureText("mmmmmmmmmmlli").width;
+    };
     return terminalFont(
       this.plugin.settings.syncObsidianFont,
-      [css("--font-text-size"), note ? getComputedStyle(note).fontSize : ""],
-      ["--font-monospace", "--font-monospace-override", "--font-monospace-theme", "--font-monospace-default"].map(css)
+      [size, css("--font-text-size")],
+      [family, css("--font-monospace")],
+      (name) => fontInstalled(name, measure)
     );
   }
 
@@ -158,7 +170,7 @@ export class CopilotView extends ItemView {
 
   fontInfo(): string {
     const f = this.terminal?.options;
-    return f ? `${f.fontSize}px, ${String(f.fontFamily).split(",")[0]}` : "";
+    return f ? `${f.fontSize}px, ${String(f.fontFamily).split(",").slice(0, 2).join(",")}` : "";
   }
 
   /** Left-click on a link: ask before opening, unless links are limited to the right-click menu */
@@ -169,7 +181,12 @@ export class CopilotView extends ItemView {
   }
 
   private copyText(text: string): void {
-    navigator.clipboard.writeText(text).catch(() => new Notice("Could not copy to the clipboard."));
+    // Electron's clipboard has no focus requirement; navigator.clipboard fails right after a native menu closes
+    try {
+      (require("electron") as { clipboard: { writeText(text: string): void } }).clipboard.writeText(text);
+    } catch {
+      navigator.clipboard.writeText(text).catch(() => new Notice("Could not copy to the clipboard."));
+    }
   }
 
   /** Open in the default browser; goes through the OS directly, so Obsidian's own navigate warning never fires */

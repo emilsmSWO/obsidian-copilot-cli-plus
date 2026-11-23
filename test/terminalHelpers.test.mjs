@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cellAt, safeHttpUrl, terminalFont, urlAt, DEFAULT_TERMINAL_FONT } from "../src/terminalHelpers.ts";
+import { fontInstalled, cellAt, safeHttpUrl, terminalFont, urlAt, DEFAULT_TERMINAL_FONT } from "../src/terminalHelpers.ts";
 
 test("urlAt returns the URL covering the offset, without trailing punctuation", () => {
   const text = "see https://example.com/a?b=1, or http://x.io.";
@@ -32,4 +32,16 @@ test("terminalFont uses the theme only when syncing, skipping empty candidates",
     family: `Fira Code, monospace, ${DEFAULT_TERMINAL_FONT.family}`,
   });
   assert.deepEqual(terminalFont(true, ["", "0px"], ['""', ""]), DEFAULT_TERMINAL_FONT);
+});
+
+test("terminalFont drops names the system does not have", () => {
+  const f = terminalFont(true, ["15px"], ['"??", Fira Code, monospace'], (n) => n !== '"??"');
+  assert.equal(f.family, `Fira Code, monospace, ${DEFAULT_TERMINAL_FONT.family}`);
+});
+
+test("fontInstalled: generic names pass, unknown names measure like the fallback", () => {
+  const measure = (f) => (f.startsWith("Real") ? 7 : f.includes("serif") ? 9 : 8);
+  assert.equal(fontInstalled("monospace", measure), true);
+  assert.equal(fontInstalled("Real Mono", measure), true);
+  assert.equal(fontInstalled('"??"', measure), false);
 });

@@ -40,15 +40,26 @@ export function cellAt(
   };
 }
 
+/** True for generic CSS families and for names whose text measures differently from the generic fallbacks */
+export function fontInstalled(name: string, measure: (font: string) => number): boolean {
+  if (/^(monospace|serif|sans-serif|cursive|fantasy|system-ui|ui-[\w-]+)$/i.test(name)) return true;
+  return measure(`${name}, monospace`) !== measure("monospace") || measure(`${name}, serif`) !== measure("serif");
+}
+
 /**
  * Font for the terminal. When syncing, takes the first usable size and family from the
  * candidates (themes may leave a variable empty or as ""), keeping the built-in family as a fallback.
  */
-export function terminalFont(sync: boolean, sizes: string[], families: string[]): { size: number; family: string } {
+export function terminalFont(
+  sync: boolean,
+  sizes: string[],
+  families: string[],
+  usable: (name: string) => boolean = () => true
+): { size: number; family: string } {
   if (!sync) return DEFAULT_TERMINAL_FONT;
   const size = sizes.map(parseFloat).find((n) => n > 0) ?? DEFAULT_TERMINAL_FONT.size;
   const theme = families
-    .map((f) => f.split(",").map((n) => n.trim()).filter((n) => n && n !== '""' && n !== "''").join(", "))
+    .map((f) => f.split(",").map((n) => n.trim()).filter((n) => n && n !== '""' && n !== "''" && usable(n)).join(", "))
     .find(Boolean);
   return { size, family: theme ? `${theme}, ${DEFAULT_TERMINAL_FONT.family}` : DEFAULT_TERMINAL_FONT.family };
 }
