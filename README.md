@@ -10,7 +10,8 @@ An Obsidian plugin that embeds **GitHub Copilot CLI** as a fully interactive ter
 - **File context awareness** — Writes the active file path to a `.context` file that Copilot reads via instructions, so it always knows what you're working on.
 - **Theme sync** — Terminal colors match your Obsidian theme (light/dark, custom themes) and update live.
 - **Proper resize** — Real PTY via ConPTY bridge with correct terminal reflow.
-- **Clickable links** — URLs in terminal output are clickable.
+- **Clickable links** — Left-click asks to open or copy the URL (never opens the browser on Cancel). Right-click a URL for Copy Hyperlink, Open Hyperlink, Open Hyperlink in Obsidian.
+- **Right-click** — On the cursor row (the input line) it pastes the clipboard; elsewhere it opens a menu with Copy.
 - **Configurable** — CLI flags, placement, working directory, auto-open toggle.
 - **Tiny footprint** — The ConPTY bridge is ~170KB (no Node.js native modules needed).
 
@@ -60,6 +61,8 @@ Manual installation only.
 | Copilot CLI flags | `--banner` | Flags passed to the CLI |
 | Working directory | vault | CWD for the Copilot session |
 | Auto-inject file context | On | Write active file to `.context` for Copilot |
+| Sync font with Obsidian theme | Off | Use the theme's monospace font and text size in the terminal |
+| Open links only from the right-click menu | Off | Left-click on a link does nothing |
 
 ## Architecture
 
