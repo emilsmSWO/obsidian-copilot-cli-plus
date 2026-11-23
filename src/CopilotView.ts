@@ -5,7 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 
 import { VIEW_TYPE_COPILOT } from "./constants";
 import { clampReadyDelay } from "./prompts";
-import { DEFAULT_TERMINAL_FONT, URL_PATTERN, cellAt, safeHttpUrl, terminalFont, urlAt } from "./terminalHelpers";
+import { URL_PATTERN, cellAt, safeHttpUrl, terminalFont, urlAt } from "./terminalHelpers";
 import { confirmLink } from "./LinkConfirmModal";
 import type CopilotPlugin from "./main";
 import { resolveCopilot } from "./resolveCopilot";
@@ -135,17 +135,14 @@ export class CopilotView extends ItemView {
 
   /** Theme font and size when "Sync font" is on, otherwise the built-in default */
   private getFont(): { size: number; family: string } {
-    const probe = document.body.createDiv();
-    probe.setCssStyles({
-      position: "absolute",
-      visibility: "hidden",
-      fontFamily: `var(--font-monospace, ${DEFAULT_TERMINAL_FONT.family})`,
-      fontSize: `var(--font-text-size, ${DEFAULT_TERMINAL_FONT.size}px)`,
-    });
-    const style = getComputedStyle(probe);
-    const font = terminalFont(this.plugin.settings.syncObsidianFont, style.fontSize, style.fontFamily);
-    probe.remove();
-    return font;
+    const css = (name: string) => getComputedStyle(document.body).getPropertyValue(name);
+    // Size as rendered in an open note, in case the theme doesn't expose --font-text-size
+    const note = document.querySelector(".markdown-source-view .cm-content, .markdown-preview-view");
+    return terminalFont(
+      this.plugin.settings.syncObsidianFont,
+      [css("--font-text-size"), note ? getComputedStyle(note).fontSize : ""],
+      ["--font-monospace", "--font-monospace-override", "--font-monospace-theme", "--font-monospace-default"].map(css)
+    );
   }
 
   /** Apply the current font setting and refit; a no-op when nothing changed */
@@ -157,6 +154,11 @@ export class CopilotView extends ItemView {
     t.options.fontSize = font.size;
     t.options.fontFamily = font.family;
     requestAnimationFrame(() => this.handleResize());
+  }
+
+  fontInfo(): string {
+    const f = this.terminal?.options;
+    return f ? `${f.fontSize}px, ${String(f.fontFamily).split(",")[0]}` : "";
   }
 
   /** Left-click on a link: ask before opening, unless links are limited to the right-click menu */
@@ -224,6 +226,7 @@ export class CopilotView extends ItemView {
       if (e.type === "mousedown") e.preventDefault(); // keep the selection
     };
     wrapper.addEventListener("mousedown", () => this.contextMenu?.hide(), true);
+    this.setupLinkClick(wrapper);
     wrapper.addEventListener("mousedown", swallow, true);
     wrapper.addEventListener("mouseup", swallow, true);
     wrapper.addEventListener("auxclick", swallow, true);
@@ -236,6 +239,39 @@ export class CopilotView extends ItemView {
       },
       true
     );
+  }
+
+  /**
+   * Left-click on a link. xterm forwards mouse clicks to the CLI when it enables mouse reporting,
+   * and the CLI opens links itself, so a click on a link must never reach xterm. Shift-click is left
+   * for selecting text.
+   */
+  private setupLinkClick(wrapper: HTMLElement): void {
+    let downAt = "";
+    const linkAt = (e: MouseEvent): string | null => {
+      const t = this.terminal;
+      const screen = t?.element?.querySelector(".xterm-screen");
+      if (!t || !screen || e.button !== 0 || e.shiftKey) return null;
+      const { col, row } = cellAt(e.clientX, e.clientY, screen.getBoundingClientRect(), t.cols, t.rows);
+      const hovered = screen.classList.contains("xterm-cursor-pointer");
+      // OSC 8 links have no URL in the text, so xterm's own hover state supplies it
+      const osc = hovered ? (t as any)._core?.linkifier?.currentLink?.link?.text : null;
+      return this.urlAtCell(row, col) ?? osc ?? null;
+    };
+    for (const type of ["mousedown", "mouseup", "click"] as const) {
+      wrapper.addEventListener(
+        type,
+        (e) => {
+          const url = linkAt(e);
+          if (!url) return;
+          e.stopPropagation();
+          if (type === "mousedown") downAt = `${e.clientX},${e.clientY}`;
+          // a drag across a link is a selection, not a click
+          else if (type === "mouseup" && downAt === `${e.clientX},${e.clientY}`) this.onLinkClick(e, url);
+        },
+        true
+      );
+    }
   }
 
   private contextMenu: Menu | null = null;

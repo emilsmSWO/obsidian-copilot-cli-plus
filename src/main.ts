@@ -17,6 +17,12 @@ export default class CopilotPlugin extends Plugin {
   /** Handed to the next CopilotView constructed (see activateView) */
   pendingLaunch: { sessionId: string; prompt: PromptDef } | null = null;
 
+  /** Font currently used for new terminals, for display */
+  terminalFontInfo(): string {
+    const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_COPILOT).map((l) => l.view).find((v) => v instanceof CopilotView);
+    return view instanceof CopilotView ? view.fontInfo() : "applied to new terminals";
+  }
+
   /** Re-apply the terminal font in every open Copilot view (after the sync setting changes) */
   refreshTerminalFont(): void {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_COPILOT)) {
