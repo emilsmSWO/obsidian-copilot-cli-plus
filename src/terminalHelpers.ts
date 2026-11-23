@@ -40,11 +40,15 @@ export function cellAt(
   };
 }
 
-/** Font for the terminal: the theme's monospace font and text size when syncing, otherwise the built-in default */
-export function terminalFont(sync: boolean, cssSize: string, cssFamily: string): { size: number; family: string } {
-  const size = parseFloat(cssSize);
-  const family = cssFamily.trim();
-  return sync
-    ? { size: size > 0 ? size : DEFAULT_TERMINAL_FONT.size, family: family || DEFAULT_TERMINAL_FONT.family }
-    : DEFAULT_TERMINAL_FONT;
+/**
+ * Font for the terminal. When syncing, takes the first usable size and family from the
+ * candidates (themes may leave a variable empty or as ""), keeping the built-in family as a fallback.
+ */
+export function terminalFont(sync: boolean, sizes: string[], families: string[]): { size: number; family: string } {
+  if (!sync) return DEFAULT_TERMINAL_FONT;
+  const size = sizes.map(parseFloat).find((n) => n > 0) ?? DEFAULT_TERMINAL_FONT.size;
+  const theme = families
+    .map((f) => f.split(",").map((n) => n.trim()).filter((n) => n && n !== '""' && n !== "''").join(", "))
+    .find(Boolean);
+  return { size, family: theme ? `${theme}, ${DEFAULT_TERMINAL_FONT.family}` : DEFAULT_TERMINAL_FONT.family };
 }

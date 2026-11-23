@@ -25,8 +25,11 @@ test("cellAt maps pixels to cells and clamps to the grid", () => {
   assert.deepEqual(cellAt(0, 0, rect, 80, 24), { col: 0, row: 0 });
 });
 
-test("terminalFont uses the theme only when syncing, with fallbacks", () => {
-  assert.deepEqual(terminalFont(false, "20px", "Fira"), DEFAULT_TERMINAL_FONT);
-  assert.deepEqual(terminalFont(true, "16px", " Fira Code, monospace "), { size: 16, family: "Fira Code, monospace" });
-  assert.deepEqual(terminalFont(true, "", ""), DEFAULT_TERMINAL_FONT);
+test("terminalFont uses the theme only when syncing, skipping empty candidates", () => {
+  assert.deepEqual(terminalFont(false, ["20px"], ["Fira"]), DEFAULT_TERMINAL_FONT);
+  assert.deepEqual(terminalFont(true, ["", "16px"], ['"", Fira Code, monospace', "Consolas"]), {
+    size: 16,
+    family: `Fira Code, monospace, ${DEFAULT_TERMINAL_FONT.family}`,
+  });
+  assert.deepEqual(terminalFont(true, ["", "0px"], ['""', ""]), DEFAULT_TERMINAL_FONT);
 });

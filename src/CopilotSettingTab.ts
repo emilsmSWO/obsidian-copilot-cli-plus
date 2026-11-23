@@ -107,6 +107,7 @@ export class CopilotSettingTab extends PluginSettingTab {
             this.plugin.settings.syncObsidianFont = value;
             await this.plugin.saveSettings();
             this.plugin.refreshTerminalFont();
+            if (value) new Notice(`Terminal font: ${this.plugin.terminalFontInfo()}`);
           })
       );
 
