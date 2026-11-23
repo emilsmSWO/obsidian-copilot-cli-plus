@@ -62,7 +62,7 @@ Manual installation only.
 | Working directory | vault | CWD for the Copilot session |
 | Auto-inject file context | On | Write active file to `.context` for Copilot |
 | Sync font with Obsidian theme | Off | Use the theme's monospace font and text size in the terminal |
-| Open links only from the right-click menu | Off | Left-click on a link does nothing |
+| Block left-click on links | Off | Left-click on a link does nothing; use the right-click menu |
 
 ## Architecture
 

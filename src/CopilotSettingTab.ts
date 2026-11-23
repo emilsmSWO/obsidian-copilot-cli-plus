@@ -112,8 +112,8 @@ export class CopilotSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Open links only from the right-click menu")
-      .setDesc("Left-clicking a link in the terminal does nothing. Right-click a link to copy it or open it in the browser or Obsidian's Web viewer.")
+      .setName("Block left-click on links")
+      .setDesc("When on, left-clicking a link in the terminal does nothing. Right-click a link to copy it or open it in the browser or Obsidian's Web viewer.")
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.blockLinkClick)
