@@ -17,6 +17,13 @@ export default class CopilotPlugin extends Plugin {
   /** Handed to the next CopilotView constructed (see activateView) */
   pendingLaunch: { sessionId: string; prompt: PromptDef } | null = null;
 
+  /** Re-apply the terminal font in every open Copilot view (after the sync setting changes) */
+  refreshTerminalFont(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_COPILOT)) {
+      (leaf.view as CopilotView).applyFont();
+    }
+  }
+
   /** Start or stop the IDE server to match the current setting (live toggle). */
   async setIdeIntegration(enabled: boolean): Promise<void> {
     if (enabled && !this.ideServer) {

@@ -1,10 +1,12 @@
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, Menu, Notice, WorkspaceLeaf } from "obsidian";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 
 import { VIEW_TYPE_COPILOT } from "./constants";
 import { clampReadyDelay } from "./prompts";
+import { URL_PATTERN, cellAt, safeHttpUrl, terminalFont, urlAt } from "./terminalHelpers";
+import { confirmLink } from "./LinkConfirmModal";
 import type CopilotPlugin from "./main";
 import { resolveCopilot } from "./resolveCopilot";
 
@@ -78,8 +80,8 @@ export class CopilotView extends ItemView {
     // Initialize xterm.js — theme reads from Obsidian CSS variables
     this.terminal = new Terminal({
       cursorBlink: true,
-      fontSize: 14,
-      fontFamily: "'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace",
+      fontSize: this.getFont().size,
+      fontFamily: this.getFont().family,
       theme: this.getObsidianTheme(),
       allowProposedApi: true,
       scrollback: 10000,
@@ -88,7 +90,7 @@ export class CopilotView extends ItemView {
     // Addons
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
-    this.terminal.loadAddon(new WebLinksAddon());
+    this.terminal.loadAddon(new WebLinksAddon((e, uri) => this.onLinkClick(e, uri), { urlRegex: URL_PATTERN }));
 
     // Canvas renderer is used (WebGL requires Workers which Obsidian doesn't support)
 
@@ -98,11 +100,13 @@ export class CopilotView extends ItemView {
     // Obsidian intercepts key events at the document level, so we must
     // stop propagation before they bubble up from the terminal.
     this.setupKeyboardInterception(wrapper);
+    this.setupContextMenu(wrapper);
 
     // Watch for Obsidian theme changes (light/dark toggle, theme switch)
     this.themeMutationObserver = new MutationObserver(() => {
       if (this.terminal) {
         this.terminal.options.theme = this.getObsidianTheme();
+        this.applyFont();
       }
     });
     this.themeMutationObserver.observe(document.body, {
@@ -124,6 +128,135 @@ export class CopilotView extends ItemView {
 
     // Cache active file for PTY environment
     this.cacheEditorContext();
+  }
+
+  /** Theme font and size when "Sync font" is on, otherwise the built-in default */
+  private getFont(): { size: number; family: string } {
+    const style = getComputedStyle(document.body);
+    return terminalFont(
+      this.plugin.settings.syncObsidianFont,
+      style.getPropertyValue("--font-text-size"),
+      style.getPropertyValue("--font-monospace")
+    );
+  }
+
+  /** Apply the current font setting and refit; a no-op when nothing changed */
+  applyFont(): void {
+    const t = this.terminal;
+    if (!t) return;
+    const font = this.getFont();
+    if (t.options.fontSize === font.size && t.options.fontFamily === font.family) return;
+    t.options.fontSize = font.size;
+    t.options.fontFamily = font.family;
+    requestAnimationFrame(() => this.handleResize());
+  }
+
+  /** Left-click on a link: ask before opening, unless links are limited to the right-click menu */
+  private onLinkClick(e: MouseEvent, uri: string): void {
+    if (e.button !== 0 || this.plugin.settings.blockLinkClick) return;
+    const safe = safeHttpUrl(uri);
+    if (safe) confirmLink(this.app, uri, () => this.openLink(safe), () => this.copyText(uri));
+  }
+
+  private copyText(text: string): void {
+    navigator.clipboard.writeText(text).catch(() => new Notice("Could not copy to the clipboard."));
+  }
+
+  /** Open in the default browser; goes through the OS directly, so Obsidian's own navigate warning never fires */
+  private openLink(url: string): void {
+    const { shell } = require("electron") as { shell: { openExternal(url: string): Promise<void> } };
+    shell.openExternal(url).catch(() => new Notice("Could not open the link."));
+  }
+
+  private openLinkInObsidian(url: string): void {
+    const webviewer = (this.app as any).internalPlugins?.plugins?.webviewer;
+    if (webviewer && !webviewer.enabled) {
+      new Notice("Web viewer core plugin is off; opening in the browser.");
+      this.openLink(url);
+      return;
+    }
+    this.app.workspace
+      .getLeaf("tab")
+      .setViewState({ type: "webviewer", active: true, state: { url, navigate: true } })
+      .catch(() => this.openLink(url));
+  }
+
+  /** URL under a terminal cell (viewport row/col), following lines the terminal wrapped */
+  private urlAtCell(row: number, col: number): string | null {
+    const buf = this.terminal?.buffer.active;
+    if (!buf) return null;
+    const clicked = buf.viewportY + row;
+    let start = clicked;
+    while (start > 0 && buf.getLine(start)?.isWrapped) start--;
+    let text = "";
+    let offset = -1;
+    for (let y = start; ; y++) {
+      const line = buf.getLine(y);
+      if (!line) break;
+      for (let x = 0; x < line.length; x++) {
+        if (y === clicked && x === col) offset = text.length;
+        const cell = line.getCell(x);
+        if (cell && cell.getWidth() !== 0) text += cell.getChars() || " ";
+      }
+      if (!buf.getLine(y + 1)?.isWrapped) break;
+    }
+    return offset < 0 ? null : urlAt(text, offset);
+  }
+
+  /**
+   * Right-click: a link opens the link menu, the cursor row (the CLI's input line)
+   * pastes the clipboard, anywhere else offers Copy. Handled in the capture phase
+   * so neither xterm's native Cut/Copy/Paste menu nor the CLI's mouse reporting
+   * ever sees the right button.
+   */
+  private setupContextMenu(wrapper: HTMLElement): void {
+    const swallow = (e: MouseEvent) => {
+      if (e.button === 2) e.stopPropagation();
+    };
+    wrapper.addEventListener("mousedown", swallow, true);
+    wrapper.addEventListener("mouseup", swallow, true);
+    wrapper.addEventListener("auxclick", swallow, true);
+    wrapper.addEventListener(
+      "contextmenu",
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.onRightClick(e);
+      },
+      true
+    );
+  }
+
+  private onRightClick(e: MouseEvent): void {
+    const t = this.terminal;
+    const screen = t?.element?.querySelector(".xterm-screen");
+    if (!t || !screen) return;
+    const { col, row } = cellAt(e.clientX, e.clientY, screen.getBoundingClientRect(), t.cols, t.rows);
+
+    const link = this.urlAtCell(row, col);
+    const safe = link && safeHttpUrl(link);
+    if (link && safe) {
+      new Menu()
+        .addItem((i) => i.setTitle("Copy Hyperlink").setIcon("copy").onClick(() => this.copyText(link)))
+        .addItem((i) => i.setTitle("Open Hyperlink").setIcon("external-link").onClick(() => this.openLink(safe)))
+        .addItem((i) =>
+          i.setTitle("Open Hyperlink in Obsidian").setIcon("globe").onClick(() => this.openLinkInObsidian(safe))
+        )
+        .showAtMouseEvent(e);
+    } else if (row === t.buffer.active.cursorY) {
+      void this.handlePaste();
+      t.focus();
+    } else {
+      new Menu()
+        .addItem((i) =>
+          i
+            .setTitle("Copy")
+            .setIcon("copy")
+            .setDisabled(!t.hasSelection())
+            .onClick(() => this.copyText(t.getSelection()))
+        )
+        .showAtMouseEvent(e);
+    }
   }
 
   /** Build xterm theme from Obsidian's CSS variables — adapts to any theme */
