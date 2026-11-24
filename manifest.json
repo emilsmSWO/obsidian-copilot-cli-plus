@@ -1,0 +1,14 @@
+{
+  "id": "copilot-cli-plus",
+  "name": "Copilot CLI Plus",
+  "version": "1.0.5",
+  "minAppVersion": "1.5.0",
+  "description": "Embeds GitHub Copilot CLI as an interactive terminal inside Obsidian with automatic file context awareness.",
+  "author": "Emil Smolinski",
+  "authorUrl": "https://github.com/emilsmSWO",
+  "isDesktopOnly": true
+}
+
+
+
+
