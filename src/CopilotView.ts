@@ -239,11 +239,22 @@ export class CopilotView extends ItemView {
   private setupContextMenu(wrapper: HTMLElement): void {
     const swallow = (e: MouseEvent) => {
       if (e.button !== 2) return;
-      if (e.type === "mousedown") this.selectionAtRightDown = this.currentSelection();
       e.stopPropagation();
       if (e.type === "mousedown") e.preventDefault(); // keep the selection
     };
-    wrapper.addEventListener("mousedown", () => this.contextMenu?.hide(), true);
+    wrapper.addEventListener(
+      "mousedown",
+      (e) => {
+        this.contextMenu?.hide();
+        if (e.button === 0) this.lastSelection = ""; // a new click starts a new selection
+      },
+      true
+    );
+    // xterm drops its selection whenever the CLI redraws mouse modes or receives input, so remember the last one
+    this.terminal?.onSelectionChange(() => {
+      const s = this.terminal?.getSelection();
+      if (s) this.lastSelection = s;
+    });
     this.setupLinkClick(wrapper);
     wrapper.addEventListener("mousedown", swallow, true);
     wrapper.addEventListener("mouseup", swallow, true);
@@ -293,7 +304,7 @@ export class CopilotView extends ItemView {
   }
 
   private contextMenu: Menu | null = null;
-  private selectionAtRightDown = "";
+  private lastSelection = "";
 
   /** xterm's selection, or the page's when the DOM renderer keeps it there */
   private currentSelection(): string {
@@ -329,8 +340,8 @@ export class CopilotView extends ItemView {
       void this.handlePaste();
       t.focus();
     } else {
-      // Snapshot now: the selection may be gone by the time the menu item is clicked
-      const selected = this.currentSelection() || this.selectionAtRightDown;
+      // Snapshot now: xterm may have cleared the selection by the time the menu item is clicked
+      const selected = this.currentSelection() || this.lastSelection;
       this.showMenu(e, (m) =>
         m.addItem((i) =>
           i.setTitle("Copy").setIcon("copy").onClick(() => {
