@@ -324,14 +324,10 @@ export class CopilotView extends ItemView {
           i.setTitle("Copy").setIcon("copy").onClick(() => {
             if (selected) {
               this.copyText(selected);
-              new Notice(`Copied ${selected.length} characters.`);
             } else if (this.cliSelection) {
               // The selection belongs to the CLI, which copies it on Ctrl+C (as it does from the keyboard)
               this.cliSelection = false;
               t.input("\x03");
-              new Notice("Copy requested from the CLI (Ctrl+C).");
-            } else {
-              new Notice(`Nothing selected (xterm selection empty, mouse mode: ${t.modes.mouseTrackingMode}).`);
             }
           })
         )
