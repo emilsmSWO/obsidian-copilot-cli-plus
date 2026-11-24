@@ -33,8 +33,6 @@ export interface CopilotSettings {
   autoConnectIde: boolean;
   /** Left-click on a terminal link does nothing; links open only from the right-click menu */
   blockLinkClick: boolean;
-  /** Use the theme's monospace font and text size in the terminal */
-  syncObsidianFont: boolean;
   /** User-defined prompts exposed as command palette commands */
   prompts: PromptDef[];
   /** Values available to prompt templates as %name% */
@@ -56,7 +54,6 @@ export const DEFAULT_SETTINGS: CopilotSettings = {
   enableIdeIntegration: true,
   autoConnectIde: true,
   blockLinkClick: false,
-  syncObsidianFont: false,
   prompts: [],
   promptConstants: {},
   promptReadyDelayMs: 2500,
