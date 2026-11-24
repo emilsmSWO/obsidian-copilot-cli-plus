@@ -14,7 +14,7 @@ export function confirmLink(app: App, url: string, open: () => void, copy: () =>
     modal.close();
     open();
   };
-  buttons.createEl("button", { text: "Copy Hyperlink" }).onclick = () => {
+  buttons.createEl("button", { text: "Copy Hyperlink", cls: "mod-cta" }).onclick = () => {
     modal.close();
     copy();
   };

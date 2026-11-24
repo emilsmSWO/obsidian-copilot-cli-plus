@@ -151,8 +151,8 @@ export class CopilotView extends ItemView {
     };
     return terminalFont(
       this.plugin.settings.syncObsidianFont,
-      [size, css("--font-text-size")],
-      [family, css("--font-monospace")],
+      [css("--copilot-terminal-font-size"), size, css("--font-text-size")],
+      [css("--copilot-terminal-font-family"), family, css("--font-monospace")],
       (name) => fontInstalled(name, measure)
     );
   }
@@ -239,6 +239,7 @@ export class CopilotView extends ItemView {
   private setupContextMenu(wrapper: HTMLElement): void {
     const swallow = (e: MouseEvent) => {
       if (e.button !== 2) return;
+      if (e.type === "mousedown") this.selectionAtRightDown = this.currentSelection();
       e.stopPropagation();
       if (e.type === "mousedown") e.preventDefault(); // keep the selection
     };
@@ -292,6 +293,12 @@ export class CopilotView extends ItemView {
   }
 
   private contextMenu: Menu | null = null;
+  private selectionAtRightDown = "";
+
+  /** xterm's selection, or the page's when the DOM renderer keeps it there */
+  private currentSelection(): string {
+    return this.terminal?.getSelection() || window.getSelection()?.toString() || "";
+  }
 
   private showMenu(e: MouseEvent, fill: (menu: Menu) => void): void {
     this.contextMenu?.hide();
@@ -322,13 +329,17 @@ export class CopilotView extends ItemView {
       void this.handlePaste();
       t.focus();
     } else {
-      // With the DOM renderer the selection can live in the page rather than in xterm
-      const selected = t.getSelection() || window.getSelection()?.toString() || "";
+      // Snapshot now: the selection may be gone by the time the menu item is clicked
+      const selected = this.currentSelection() || this.selectionAtRightDown;
       this.showMenu(e, (m) =>
         m.addItem((i) =>
           i.setTitle("Copy").setIcon("copy").onClick(() => {
-            if (selected) this.copyText(selected);
-            else new Notice("Nothing selected.");
+            if (!selected) {
+              new Notice("Nothing selected in the terminal. If the CLI highlights text itself, hold Shift while selecting.");
+              return;
+            }
+            this.copyText(selected);
+            new Notice("Copied.");
           })
         )
       );
