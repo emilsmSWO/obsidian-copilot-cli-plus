@@ -151,8 +151,8 @@ export class CopilotView extends ItemView {
     };
     return terminalFont(
       this.plugin.settings.syncObsidianFont,
-      [size, css("--font-text-size")],
-      [family, css("--font-monospace")],
+      [css("--copilot-terminal-font-size"), size, css("--font-text-size")],
+      [css("--copilot-terminal-font-family"), family, css("--font-monospace")],
       (name) => fontInstalled(name, measure)
     );
   }
@@ -242,7 +242,19 @@ export class CopilotView extends ItemView {
       e.stopPropagation();
       if (e.type === "mousedown") e.preventDefault(); // keep the selection
     };
-    wrapper.addEventListener("mousedown", () => this.contextMenu?.hide(), true);
+    wrapper.addEventListener(
+      "mousedown",
+      (e) => {
+        this.contextMenu?.hide();
+        if (e.button === 0) this.lastSelection = ""; // a new click starts a new selection
+      },
+      true
+    );
+    // xterm drops its selection whenever the CLI redraws mouse modes or receives input, so remember the last one
+    this.terminal?.onSelectionChange(() => {
+      const s = this.terminal?.getSelection();
+      if (s) this.lastSelection = s;
+    });
     this.setupLinkClick(wrapper);
     wrapper.addEventListener("mousedown", swallow, true);
     wrapper.addEventListener("mouseup", swallow, true);
@@ -292,6 +304,12 @@ export class CopilotView extends ItemView {
   }
 
   private contextMenu: Menu | null = null;
+  private lastSelection = "";
+
+  /** xterm's selection, or the page's when the DOM renderer keeps it there */
+  private currentSelection(): string {
+    return this.terminal?.getSelection() || window.getSelection()?.toString() || "";
+  }
 
   private showMenu(e: MouseEvent, fill: (menu: Menu) => void): void {
     this.contextMenu?.hide();
@@ -322,13 +340,17 @@ export class CopilotView extends ItemView {
       void this.handlePaste();
       t.focus();
     } else {
-      // With the DOM renderer the selection can live in the page rather than in xterm
-      const selected = t.getSelection() || window.getSelection()?.toString() || "";
+      // Snapshot now: xterm may have cleared the selection by the time the menu item is clicked
+      const selected = this.currentSelection() || this.lastSelection;
       this.showMenu(e, (m) =>
         m.addItem((i) =>
           i.setTitle("Copy").setIcon("copy").onClick(() => {
-            if (selected) this.copyText(selected);
-            else new Notice("Nothing selected.");
+            if (!selected) {
+              new Notice("Nothing selected in the terminal. If the CLI highlights text itself, hold Shift while selecting.");
+              return;
+            }
+            this.copyText(selected);
+            new Notice("Copied.");
           })
         )
       );

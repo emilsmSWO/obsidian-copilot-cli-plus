@@ -99,7 +99,7 @@ export class CopilotSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Sync font with Obsidian theme")
-      .setDesc("Use the theme's monospace font and text size in the terminal. Off keeps the built-in font and size.")
+      .setDesc("Use the theme's monospace font and text size in the terminal. Off keeps the built-in font and size. To force a font, set --copilot-terminal-font-family and --copilot-terminal-font-size in a CSS snippet (see README).")
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.syncObsidianFont)
