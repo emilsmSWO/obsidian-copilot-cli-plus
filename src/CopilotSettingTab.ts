@@ -98,20 +98,6 @@ export class CopilotSettingTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: "Terminal" });
 
     new Setting(containerEl)
-      .setName("Sync font with Obsidian theme")
-      .setDesc("Use the theme's monospace font and text size in the terminal. Off keeps the built-in font and size. To force a font, set --copilot-terminal-font-family and --copilot-terminal-font-size in a CSS snippet (see README).")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.syncObsidianFont)
-          .onChange(async (value) => {
-            this.plugin.settings.syncObsidianFont = value;
-            await this.plugin.saveSettings();
-            this.plugin.refreshTerminalFont();
-            if (value) new Notice(`Terminal font: ${this.plugin.terminalFontInfo()}`);
-          })
-      );
-
-    new Setting(containerEl)
       .setName("Block left-click on links")
       .setDesc("When on, left-clicking a link in the terminal does nothing. Right-click a link to copy it or open it in the browser or Obsidian's Web viewer.")
       .addToggle((toggle) =>

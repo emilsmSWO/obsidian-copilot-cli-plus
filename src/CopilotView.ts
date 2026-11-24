@@ -5,7 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 
 import { VIEW_TYPE_COPILOT } from "./constants";
 import { clampReadyDelay } from "./prompts";
-import { URL_PATTERN, fontInstalled, cellAt, safeHttpUrl, terminalFont, urlAt } from "./terminalHelpers";
+import { URL_PATTERN, cellAt, safeHttpUrl, urlAt } from "./terminalHelpers";
 import { confirmLink } from "./LinkConfirmModal";
 import type CopilotPlugin from "./main";
 import { resolveCopilot } from "./resolveCopilot";
@@ -80,8 +80,8 @@ export class CopilotView extends ItemView {
     // Initialize xterm.js — theme reads from Obsidian CSS variables
     this.terminal = new Terminal({
       cursorBlink: true,
-      fontSize: this.getFont().size,
-      fontFamily: this.getFont().family,
+      fontSize: 14,
+      fontFamily: "'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace",
       theme: this.getObsidianTheme(),
       allowProposedApi: true,
       scrollback: 10000,
@@ -103,13 +103,11 @@ export class CopilotView extends ItemView {
     // stop propagation before they bubble up from the terminal.
     this.setupKeyboardInterception(wrapper);
     this.setupContextMenu(wrapper);
-    this.registerEvent(this.app.workspace.on("css-change", () => this.applyFont()));
 
     // Watch for Obsidian theme changes (light/dark toggle, theme switch)
     this.themeMutationObserver = new MutationObserver(() => {
       if (this.terminal) {
         this.terminal.options.theme = this.getObsidianTheme();
-        this.applyFont();
       }
     });
     this.themeMutationObserver.observe(document.body, {
@@ -131,46 +129,6 @@ export class CopilotView extends ItemView {
 
     // Cache active file for PTY environment
     this.cacheEditorContext();
-  }
-
-  /** Theme font and size when "Sync font" is on, otherwise the built-in default */
-  private getFont(): { size: number; family: string } {
-    // Resolve through real note elements so the theme's own CSS decides: text size from the note body, family from inline code
-    const probe = document.body.createDiv({ cls: "markdown-preview-view markdown-rendered" });
-    probe.setCssStyles({ position: "absolute", visibility: "hidden" });
-    const code = probe.createEl("code");
-    const size = getComputedStyle(probe).fontSize;
-    const family = getComputedStyle(code).fontFamily;
-    probe.remove();
-    const css = (name: string) => getComputedStyle(document.body).getPropertyValue(name);
-    const ctx = document.createElement("canvas").getContext("2d");
-    const measure = (font: string) => {
-      if (!ctx) return 0;
-      ctx.font = `16px ${font}`;
-      return ctx.measureText("mmmmmmmmmmlli").width;
-    };
-    return terminalFont(
-      this.plugin.settings.syncObsidianFont,
-      [css("--copilot-terminal-font-size"), size, css("--font-text-size")],
-      [css("--copilot-terminal-font-family"), family, css("--font-monospace")],
-      (name) => fontInstalled(name, measure)
-    );
-  }
-
-  /** Apply the current font setting and refit; a no-op when nothing changed */
-  applyFont(): void {
-    const t = this.terminal;
-    if (!t) return;
-    const font = this.getFont();
-    if (t.options.fontSize === font.size && t.options.fontFamily === font.family) return;
-    t.options.fontSize = font.size;
-    t.options.fontFamily = font.family;
-    requestAnimationFrame(() => this.handleResize());
-  }
-
-  fontInfo(): string {
-    const f = this.terminal?.options;
-    return f ? `${f.fontSize}px, ${String(f.fontFamily).split(",").slice(0, 2).join(",")}` : "";
   }
 
   /** Left-click on a link: ask before opening, unless links are limited to the right-click menu */
@@ -246,10 +204,27 @@ export class CopilotView extends ItemView {
       "mousedown",
       (e) => {
         this.contextMenu?.hide();
-        if (e.button === 0) this.lastSelection = ""; // a new click starts a new selection
+        if (e.button === 0) {
+          this.lastSelection = ""; // a new click starts a new selection
+          this.cliSelection = false;
+          this.dragFrom = [e.clientX, e.clientY];
+        }
       },
       true
     );
+    // When the CLI reports the mouse, a drag highlights text inside the CLI (xterm has no selection)
+    wrapper.addEventListener(
+      "mouseup",
+      (e) => {
+        const [x, y] = this.dragFrom;
+        this.dragFrom = [NaN, NaN];
+        if (e.button === 0 && Math.hypot(e.clientX - x, e.clientY - y) >= 4 && this.terminal?.modes.mouseTrackingMode !== "none") {
+          this.cliSelection = true;
+        }
+      },
+      true
+    );
+    wrapper.addEventListener("keydown", () => (this.cliSelection = false), true);
     // xterm drops its selection whenever the CLI redraws mouse modes or receives input, so remember the last one
     this.terminal?.onSelectionChange(() => {
       const s = this.terminal?.getSelection();
@@ -305,6 +280,8 @@ export class CopilotView extends ItemView {
 
   private contextMenu: Menu | null = null;
   private lastSelection = "";
+  private cliSelection = false;
+  private dragFrom: [number, number] = [NaN, NaN];
 
   /** xterm's selection, or the page's when the DOM renderer keeps it there */
   private currentSelection(): string {
@@ -345,12 +322,17 @@ export class CopilotView extends ItemView {
       this.showMenu(e, (m) =>
         m.addItem((i) =>
           i.setTitle("Copy").setIcon("copy").onClick(() => {
-            if (!selected) {
-              new Notice("Nothing selected in the terminal. If the CLI highlights text itself, hold Shift while selecting.");
-              return;
+            if (selected) {
+              this.copyText(selected);
+              new Notice(`Copied ${selected.length} characters.`);
+            } else if (this.cliSelection) {
+              // The selection belongs to the CLI, which copies it on Ctrl+C (as it does from the keyboard)
+              this.cliSelection = false;
+              t.input("\x03");
+              new Notice("Copy requested from the CLI (Ctrl+C).");
+            } else {
+              new Notice(`Nothing selected (xterm selection empty, mouse mode: ${t.modes.mouseTrackingMode}).`);
             }
-            this.copyText(selected);
-            new Notice("Copied.");
           })
         )
       );

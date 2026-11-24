@@ -61,18 +61,7 @@ Manual installation only.
 | Copilot CLI flags | `--banner` | Flags passed to the CLI |
 | Working directory | vault | CWD for the Copilot session |
 | Auto-inject file context | On | Write active file to `.context` for Copilot |
-| Sync font with Obsidian theme | Off | Use the theme's monospace font and text size in the terminal |
 | Block left-click on links | Off | Left-click on a link does nothing; use the right-click menu |
-
-To force a terminal font (with "Sync font" on), add a CSS snippet in Settings > Appearance > CSS snippets:
-
-```css
-body {
-  --copilot-terminal-font-family: "Fira Code", monospace;
-  --copilot-terminal-font-size: 15px;
-}
-```
-Use a monospace family; proportional fonts break the terminal grid.
 
 ## Architecture
 
